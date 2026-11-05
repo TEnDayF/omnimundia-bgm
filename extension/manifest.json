@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "Omnimundia · 随境配乐",
+  "version": "1.4.1",
+  "minimum_chrome_version": "116",
+  "description": "剧情情境判断，本地音乐匹配。支持 DeepSeek、本地兼容接口与 TypeSafe Jev。",
+  "permissions": [
+    "storage",
+    "offscreen",
+    "unlimitedStorage"
+  ],
+  "host_permissions": [
+    "https://omnimundia.cn/*"
+  ],
+  "optional_host_permissions": [
+    "https://*/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*",
+    "http://[::1]/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "随境配乐",
+    "default_popup": "popup.html"
+  },
+  "options_page": "options.html",
+  "content_scripts": [
+    {
+      "matches": [
+        "https://omnimundia.cn/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'"
+  }
+}

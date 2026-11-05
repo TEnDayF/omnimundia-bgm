@@ -1,0 +1,25 @@
+/* The toolbar popup has an intrinsic width. Do not cap it using vw:
+   Chromium initially measures popups in a small viewport. */
+:root{color-scheme:dark;--bg:#101412;--panel:#171d19;--raised:#242e27;--line:#35443a;--control:#63796a;--ink:#edf2ee;--muted:#b3c0b7;--accent:#b8e2c1;--accent-ink:#14291b;--error:#ffb5ac;font:14px/1.6 'Segoe UI','Microsoft YaHei',sans-serif}
+*{box-sizing:border-box}
+html{width:368px;min-width:368px;margin:0;background:var(--bg)}
+body.popup{width:368px;min-width:368px;margin:0;padding:18px;color:var(--ink);background:var(--bg)}
+h1,h2,p{margin:0}button,input,select{font:inherit}
+button{min-height:38px;padding:8px 12px;border:1px solid var(--control);border-radius:7px;background:transparent;color:inherit;cursor:pointer;transition:background-color .16s ease-out;white-space:nowrap}
+button:hover{background:var(--raised)}button:disabled{opacity:.55;cursor:not-allowed}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:650}button.primary:hover{background:#d0eed6}
+.popup-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+.popup-heading h1{font-size:18px;font-weight:650;white-space:nowrap;flex:none}
+button.text-button{border-color:transparent;padding:6px 0 6px 8px;font-size:12px;color:var(--muted);min-height:34px}
+.now-playing{padding:18px 0 16px}#track{font-size:21px;line-height:1.45;overflow-wrap:anywhere;font-weight:600}#status{margin-top:7px;color:var(--accent);font-size:13px;overflow-wrap:anywhere}#reason{margin-top:5px;overflow-wrap:anywhere}#reason:empty{display:none}
+.small{font-size:12px;color:var(--muted)}.message{font-size:13px;color:var(--error);white-space:pre-wrap;overflow-wrap:anywhere}.message:empty{display:none}#error:not(:empty){padding:10px 12px;border:1px solid #9f6862;border-radius:6px;margin-top:12px}
+.primary-controls{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr) minmax(0,1fr);gap:8px}.primary-controls button{padding-inline:8px}
+.volume-control{display:grid;grid-template-columns:32px minmax(0,1fr);align-items:center;gap:12px;margin:16px 0}
+label{font-size:13px;color:var(--muted)}input[type=range]{width:100%;min-width:0;height:26px;margin:0;accent-color:var(--accent)}input[type=checkbox]{width:16px;height:16px;margin:0;accent-color:var(--accent)}
+.preferences{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}.preferences>button{font-size:12px;min-height:34px;padding:6px 10px}.preferences label{display:flex;align-items:center;gap:7px;font-size:12px;white-space:nowrap}
+details{border-top:1px solid var(--line)}summary{cursor:pointer;font-size:13px;color:var(--muted);padding:12px 0;min-height:44px}.details-body{padding:0 0 14px}.details-body>label{display:block;margin-bottom:7px}
+select{display:block;width:100%;background:var(--bg);border:1px solid var(--control);color:var(--ink);padding:10px;border-radius:7px;min-width:0}
+.lock-controls{display:grid;grid-template-columns:1fr;gap:8px;margin-top:10px}.lock-controls button{font-size:12px}.guide ol{padding-left:20px;margin:0 0 8px}.guide li{padding:2px 0}.guide .details-body{font-size:12px;color:var(--muted)}
+.popup-footer{padding-top:12px;border-top:1px solid var(--line)}#usage{overflow-wrap:anywhere;margin:0 0 10px;font-size:11px}.popup-footer>button{width:100%}
+button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}::selection{background:var(--accent);color:var(--accent-ink)}
+@media(prefers-reduced-motion:reduce){button{transition:none}}

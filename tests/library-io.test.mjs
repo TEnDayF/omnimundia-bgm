@@ -1,0 +1,31 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {IDBFactory} from 'fake-indexeddb';
+import {upgradeConfig} from './built/profiles.js';
+
+test('F06：完整曲库含音频导出到独立数据库，分类、说明、音量和字节不丢失',async()=>{
+ globalThis.indexedDB=new IDBFactory();
+ const db=await import('./built/db.js?source');
+ const source=await import('./built/library-io.js?source');
+ const config=upgradeConfig({});config.connections[0].key='private-key-for-test';
+ const mood=config.moods[0].id;
+ const track={id:'song_one',name:'Test',moods:[mood],tags:[],exclude:[],description:'说明',gain:.7,intensity:2,size:4,type:'audio/wav'};
+ await db.importTrack(track,new Blob([new Uint8Array([4,3,2,1])],{type:'audio/wav'}));
+ const backup=JSON.parse(JSON.stringify(await source.exportLibrary(config,true)));
+ assert.ok(!JSON.stringify(backup).includes('private-key-for-test'));
+ assert.equal(backup.audio.length,1);
+ globalThis.indexedDB=new IDBFactory();
+ const dest=await import('./built/library-io.js?dest');
+ const destDb=await import('./built/db.js?dest');
+ const imported=await dest.importLibrary(backup,upgradeConfig({}),'skip');
+ assert.equal(imported.tracks.length,1);assert.equal(imported.missing,0);
+ const saved=await destDb.get('tracks','song_one');
+ assert.equal(saved.description,'说明');assert.equal(saved.gain,.7);
+ assert.ok(imported.moods.some(m=>m.id===saved.moods[0]));
+ assert.deepEqual([...new Uint8Array(await (await destDb.get('blobs','song_one')).blob.arrayBuffer())],[4,3,2,1]);
+ assert.equal((await db.get('tracks','song_one')).description,'说明');
+ assert.equal((await dest.importLibrary(backup,{...config,moods:imported.moods,tags:imported.tags},'skip')).skipped,1);
+ await destDb.restoreLibrary(imported.archive);
+ assert.equal((await destDb.get('tracks','song_one')).deleted,true);
+ assert.equal((await destDb.get('blobs','song_one')).blob.size,4);
+});

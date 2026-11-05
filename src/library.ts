@@ -1,0 +1,18 @@
+import {Config,Track,Mood} from './core';
+export type Bundle={format:'omni-bgm-library';version:1;time:string;moods:Mood[];tags:string[];tracks:Track[];audio:{id:string;type:string;data:string}[]};
+const strings=(x:any)=>Array.isArray(x)&&x.length<=100&&x.every(v=>typeof v==='string'&&v.length<=300);
+export function validateBundle(raw:any):Bundle{
+ if(raw?.format!=='omni-bgm-library'||raw.version!==1||!Array.isArray(raw.tracks)||raw.tracks.length>10000||!Array.isArray(raw.moods)||raw.moods.length>100||!strings(raw.tags)||!Array.isArray(raw.audio))throw Error('不是支持的曲库备份或记录数量超限');
+ const ids=new Set();for(const m of raw.moods){if(!m||typeof m.id!=='string'||!/^[A-Za-z0-9_-]+$/.test(m.id)||typeof m.name!=='string'||typeof m.description!=='string'||ids.has(m.id)||m.id.length>100||m.name.length>100||m.description.length>1000)throw Error('备份情绪类别无效');ids.add(m.id);}
+ const trackIds=new Set();for(const t of raw.tracks){if(!t||typeof t.id!=='string'||!/^[A-Za-z0-9_-]+$/.test(t.id)||trackIds.has(t.id)||typeof t.name!=='string'||t.name.length>1000||!strings(t.moods)||!strings(t.tags)||!strings(t.exclude)||[...t.tags,...t.exclude].some(x=>x.length>30)||(t.fingerprint!==undefined&&(typeof t.fingerprint!=='string'||! /^[a-f0-9]{64}$/.test(t.fingerprint)))||typeof t.description!=='string'||t.description.length>60000||!Number.isFinite(t.gain)||t.gain<0||t.gain>1||!Number.isFinite(t.intensity)||t.intensity< -1||t.intensity>3||t.moods.some(id=>!ids.has(id)))throw Error('备份曲目资料无效');trackIds.add(t.id);}
+ const audioIds=new Set();for(const a of raw.audio){if(!trackIds.has(a.id)||audioIds.has(a.id)||typeof a.type!=='string'||typeof a.data!=='string'||!/^[A-Za-z0-9+/]*={0,2}$/.test(a.data)||a.data.length%4)throw Error('备份音频无效');audioIds.add(a.id);}return raw;
+}
+export function planImport(raw:any,c:Config,existing:Track[],mode:'skip'|'copy'){
+ const bundle=validateBundle(raw),moods=c.moods.map(m=>({...m})),map=new Map<string,string>();
+ for(const m of bundle.moods){const same=moods.find(x=>x.name===m.name&&!x.disabled);if(same){map.set(m.id,same.id);continue;}let id=m.id;if(moods.some(x=>x.id===id))id=crypto.randomUUID();moods.push({id,name:m.name,description:m.description,disabled:!!m.disabled});map.set(m.id,id);}
+ const tags=[...new Set([...c.tags,...bundle.tags,...bundle.tracks.flatMap(t=>[...t.tags,...t.exclude])])];if(tags.length>40||moods.filter(m=>!m.disabled).length>24)throw Error('合并后超过 40 个标签或 24 个启用情绪，请先整理备份');
+ const tracks:Track[]=[],audio:any[]=[];let skipped=0;for(const source of bundle.tracks){const duplicate=existing.some(t=>t.id===source.id||(source.fingerprint&&t.fingerprint===source.fingerprint));if(duplicate&&mode==='skip'){skipped++;continue;}const id=duplicate?crypto.randomUUID():source.id;tracks.push({id,name:source.name,moods:source.moods.map(id=>map.get(id)),tags:[...source.tags],exclude:[...source.exclude],description:source.description,gain:source.gain,intensity:source.intensity,deleted:!!source.deleted,size:Number(source.size)||0,type:String(source.type||''),...(source.fingerprint?{fingerprint:source.fingerprint}:{})});const a=bundle.audio.find(a=>a.id===source.id);if(a)audio.push({...a,id});}
+ return {moods,tags,tracks,audio,skipped,missing:tracks.filter(t=>!audio.some(a=>a.id===t.id)).length};
+}
+export function encodeAudio(buffer:ArrayBuffer){let text='';const bytes=new Uint8Array(buffer);for(let i=0;i<bytes.length;i+=32768)text+=String.fromCharCode(...bytes.subarray(i,i+32768));return btoa(text);}
+export function decodeAudio(a:{type:string;data:string}){const binary=atob(a.data);return new Blob([Uint8Array.from(binary,x=>x.charCodeAt(0))],{type:a.type});}

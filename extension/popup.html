@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>随境配乐</title><link rel="stylesheet" href="style.css"></head>
+<body class="popup">
+<header class="popup-heading"><h1>随境配乐</h1><button id="diagnose" class="text-button">配乐工作台</button></header>
+<main>
+<section class="now-playing" aria-label="当前配乐">
+<h2 id="track">未播放</h2><p id="status" role="status"></p><p id="reason" class="small"></p><p id="error" class="message" role="alert"></p>
+</section>
+<div class="primary-controls"><button id="start" class="primary">开始配乐</button><button id="paused">暂停</button><button id="next">下一首</button></div>
+<div class="volume-control"><label for="volume">音量</label><input id="volume" type="range" min="0" max="1" step="0.01"></div>
+<div class="preferences"><button id="enabled">开启自动</button><label><input id="floating" type="checkbox"> 显示悬浮播放器</label></div>
+<details class="advanced"><summary>锁定与重新判断</summary><div class="details-body"><label for="mood">情绪模式</label><select id="mood" aria-label="锁定情绪"></select><div class="lock-controls"><button id="lock">锁定当前曲目</button><button id="retry" title="手动再发送一次情境判断请求">重新判断 · 1 次请求</button></div></div></details>
+<details class="guide"><summary>首次使用与操作说明</summary><div class="details-body"><ol><li>连接用于情境判断的模型。</li><li>导入音乐并保存情绪分类。</li><li>回到游戏，点击“开始配乐”。</li></ol><p>开始配乐将判断当前完整剧情，已有缓存可复用。</p></div></details>
+</main>
+<footer class="popup-footer"><p id="usage" class="small"></p><button id="settings">打开曲库与设置</button></footer>
+<script src="popup.js"></script>
+</body></html>

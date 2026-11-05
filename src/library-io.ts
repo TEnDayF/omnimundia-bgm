@@ -1,0 +1,7 @@
+import {Config,Track} from './core';
+import * as db from './db';
+import {Bundle,encodeAudio,decodeAudio,planImport} from './library';
+export async function exportLibrary(c:Config,includeAudio:boolean){const tracks:Track[]=await db.all('tracks');const bundle:Bundle={format:'omni-bgm-library',version:1,time:new Date().toISOString(),moods:c.moods,tags:c.tags,tracks,audio:[]};if(includeAudio){const total=tracks.reduce((n,t)=>n+(t.size||0),0);if(total>512*1048576)throw Error('音频总量超过 512MB，请先导出资料；大曲库请保留原始音频文件');for(const t of tracks){const item=await db.get('blobs',t.id);if(item?.blob)bundle.audio.push({id:t.id,type:item.blob.type,data:encodeAudio(await item.blob.arrayBuffer())});}}return bundle;}
+export async function importLibrary(raw:any,c:Config,mode:'skip'|'copy'){const existing=await db.all('tracks'),plan=planImport(raw,c,existing,mode);const blobs=plan.audio.map(a=>({id:a.id,blob:decodeAudio(a)}));const archive=await db.changeLibrary(plan.tracks,blobs,{label:'导入曲库备份',moods:c.moods,tags:c.tags,afterMoods:plan.moods,afterTags:plan.tags});return {...plan,archive};}
+export async function fileFingerprint(file:Blob){const bytes=await crypto.subtle.digest('SHA-256',await file.arrayBuffer());return [...new Uint8Array(bytes)].map(x=>x.toString(16).padStart(2,'0')).join('');}
+export function download(filename:string,data:any){const url=URL.createObjectURL(new Blob([JSON.stringify(data)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);}
