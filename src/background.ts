@@ -53,7 +53,7 @@ async function analyze(force=false){
  const f=await gate();if(!f||!canPlay())return;
  if(c.lockTrack||c.lockMood){state.status='手动锁定';state.resultSource='manual';await playSelected();return;}
  const s=f.scene;const hold=JSON.stringify([s.gameId,s.world,s.turn,s.text]);if(state.cacheHoldNext){state.cacheHoldNext=false;if(!force){state.configHold.push(hold);await save();return;}}if(!force&&state.configHold.includes(hold))return;if(force)state.configHold=state.configHold.filter(x=>x!==hold);if(!s.ready){state.status='等待剧情生成完成';return;}
- const snapshot=JSON.parse(JSON.stringify(c)) as Config;try{resolve(snapshot);}catch{state.status='请先配置模型并分配剧情判断用途';state.error='打开 AI 配置 → 模型与服务，添加后在功能分配中选择。';await save();return;}const confSig=await hash(signature(snapshot));
+ const snapshot=JSON.parse(JSON.stringify(c)) as Config;try{resolve(snapshot);}catch{state.status='请先配置模型并设为当前判断模型';state.error='打开 AI 设置，添加模型后选择为当前判断模型。';await save();return;}const confSig=await hash(signature(snapshot));
  const key=await hash([s.gameId,s.world,s.turn,s.text,confSig]);
  if(!force&&key===state.key&&state.decision){if(!state.trackId||!await chrome.offscreen.hasDocument())await playSelected();return;}
  if(!force&&state.failures[key]){state.error=state.failures[key];state.status='本回合判断失败 · 点击重判可重试';return;}

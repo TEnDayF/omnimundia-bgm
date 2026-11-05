@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Omnimundia · 随境配乐",
-  "version": "1.4.3",
+  "version": "1.5.0",
   "minimum_chrome_version": "116",
   "description": "剧情情境判断，本地音乐匹配。支持 DeepSeek、本地兼容接口与 TypeSafe Jev。",
   "permissions": [

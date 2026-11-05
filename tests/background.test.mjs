@@ -73,3 +73,30 @@ test('同一游戏新回合世界线编号变化，模型判断前不得销毁�
  assert.equal((await h.state()).trackId,'relax','新回合编号变化不能清空曲目');assert.equal((await h.state()).position,42);assert.equal(playing.paused,false);assert.equal(playing.currentTime,42);assert.ok(!h.audio.slice(start).some(m=>m.command==='stop'||m.command==='pause'),'判断前不能发送停止或暂停');
  finish(response('relax'));await wait(async()=>!(await h.state()).pending);const play=h.audio.filter(m=>m.command==='play').at(-1);assert.equal(play.id,'relax');assert.equal(play.restart,false);assert.equal(play.position,42);assert.equal(h.audioInstances.length,1,'同曲不能创建新的音频实例');assert.equal(h.audioInstances[0],playing);assert.equal(playing.paused,false);assert.equal(playing.currentTime,42,'同曲保持实时播放秒数');
 });
+
+async function completionPage(h){
+ const {JSDOM}=await import('jsdom');const source=await readFile(new URL('../extension/content.js',import.meta.url),'utf8');let now=10000,next=0;const timers=new Map(),messages=[];
+ const dom=new JSDOM('<div class="scene-content"><div class="scene">第一回合：我们在森林里休息，一切安静。</div></div><span class="page-status">第 1 / 1 回合</span><span id="world">世界线「one」</span><textarea placeholder="在这里自定义你的行动..."></textarea><button>提交</button><div id="noise"></div>',{url:'https://omnimundia.cn/game/g',runScripts:'outside-only',pretendToBeVisual:true});const w=dom.window;
+ w.Date.now=()=>now;w.setTimeout=(fn,ms=0)=>{timers.set(++next,{fn,at:now+ms});return next};w.clearTimeout=id=>timers.delete(id);w.setInterval=(fn,ms)=>{timers.set(++next,{fn,at:now+ms,period:ms});return next};w.clearInterval=id=>timers.delete(id);
+ Object.defineProperty(w.HTMLElement.prototype,'innerText',{get(){return this.textContent}});w.HTMLElement.prototype.getClientRects=()=>[{}];w.chrome={runtime:{sendMessage:async m=>{messages.push({at:now,...m});return {ok:true,data:await h.send(m,true)}}}};
+ const flush=async()=>{for(let i=0;i<10;i++)await new Promise(r=>setImmediate(r));await new Promise(r=>setTimeout(r,2));};
+ async function advance(ms){await flush();const end=now+ms;let steps=0;while(true){const entries=[...timers].filter(([,t])=>t.at<=end).sort((a,b)=>a[1].at-b[1].at);if(!entries.length)break;assert.ok(++steps<1000);const [id,t]=entries[0];now=t.at;if(t.period)t.at+=t.period;else timers.delete(id);await t.fn();await flush();}now=end;await flush();}
+ w.eval(source);await advance(3500);await wait(async()=>(await h.state()).trackId==='relax'&&!(await h.state()).pending);
+ return {w,messages,advance,now:()=>now,$:s=>w.document.querySelector(s),close:()=>dom.window.close()};
+}
+for(const mode of ['remove-node','empty-text','direct-replace'])test('快速完成检测：'+mode+' 空白续播、新文350ms内仅请求一次、迟到标记不重判',async t=>{
+ let requests=0,finish;const h=await harness(async()=>{requests++;return requests===1?response():new Promise(r=>finish=r)},true);const p=await completionPage(h);t.after(()=>{finish?.(response());p.close()});
+ const audio=h.audioInstances[0];audio.currentTime=42;await h.send({type:'audioEvent',id:'relax',event:'position',position:42});const start=h.audio.length;
+ p.$('button').disabled=true;await p.advance(2200);assert.equal(requests,1,'旧正文在生成中不重复调用');let node=p.$('.scene');
+ if(mode==='remove-node')node.remove();if(mode==='empty-text')node.textContent='';
+ if(mode!=='direct-replace'){p.$('button').disabled=false;await p.advance(150);assert.ok(p.messages.at(-1).game,'正文空白不能当作离开游戏');assert.equal(requests,1);assert.equal(audio.paused,false);}
+ if(mode==='direct-replace'){const replacement=node.cloneNode();node.replaceWith(replacement);node=replacement;}
+ node.textContent='第二回合：我们继续在篝火旁喝茶聊天，气氛温馨。';if(!node.isConnected)p.$('.scene-content').append(node);p.$('.page-status').textContent='第 2 / 2 回合';p.$('#world').textContent='世界线「two」';p.$('button').disabled=false;const completed=p.now();
+ await p.advance(290);assert.equal(requests,1);await p.advance(100);await wait(()=>requests===2);const ready=p.messages.find(m=>m.at>=completed&&m.scene?.ready&&m.scene.turn===2);assert.ok(ready.at-completed<=350);assert.ok((await h.state()).pending);
+ // A late label-only render and later heartbeats cannot revoke the completed body.
+ p.$('#world').textContent='世界线「two-late」';await p.advance(4000);assert.equal(requests,2);assert.ok((await h.state()).pending,'ready不能在短窗口后倒退导致请求被取消');assert.equal(audio.paused,false);assert.equal(audio.currentTime,42);assert.ok(!h.audio.slice(start).some(m=>['stop','pause'].includes(m.command)));
+ finish(response());await wait(async()=>!(await h.state()).pending);assert.equal(h.audioInstances.length,1);assert.equal(audio.currentTime,42);await p.advance(3000);assert.equal(requests,2);
+});
+test('生成失败正文不变，无额外请求；同回合成功重推的新正文仍能快速判断',async t=>{
+ let calls=0;const h=await harness(async()=>{calls++;return response()},true),p=await completionPage(h);t.after(()=>p.close());p.$('button').disabled=true;await p.advance(1800);p.$('button').disabled=false;await p.advance(4000);assert.equal(calls,1);p.$('button').disabled=true;await p.advance(1200);p.$('.scene').textContent='重新推演后的完整正文，我们在小屋里安静地休息。';p.$('button').disabled=false;await p.advance(400);await wait(()=>calls===2);await p.advance(4000);assert.equal(calls,2);
+});

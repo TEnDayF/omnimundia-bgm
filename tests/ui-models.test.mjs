@@ -8,7 +8,7 @@ import {familyHint,deployment,modelLabel} from './built/model-display.js';
 const wait=async f=>{for(let n=0;n<150;n++){if(f())return;await new Promise(r=>setTimeout(r,5));}throw Error('UI timeout');};
 async function setup(t){
  const dom=new JSDOM(await readFile(new URL('../extension/options.html',import.meta.url),'utf8'),{url:'https://ui-test.invalid',runScripts:'outside-only',pretendToBeVisual:true});t.after(()=>dom.window.close());
- const w=dom.window;w.indexedDB=new IDBFactory();w.structuredClone=structuredClone;w.AbortController=AbortController;
+ const w=dom.window;w.indexedDB=new IDBFactory();w.structuredClone=structuredClone;w.scrollTo=()=>{};w.AbortController=AbortController;
  w.HTMLDialogElement.prototype.showModal=function(){this.open=true};w.HTMLDialogElement.prototype.close=function(){this.open=false;this.dispatchEvent(new w.Event('close'));};
  let config=upgradeConfig(undefined),permit=true,fetches=0;const writes=[];
  w.chrome={runtime:{sendMessage:async m=>{if(m.type==='saveConfig'){writes.push(m.patch);config={...config,...structuredClone(m.patch)};}if(m.type==='readiness')return {ok:true,data:{version:'1.3.0',checks:[],targets:[]}};return {ok:true,data:m.type==='saveConfig'?config:{}};}},storage:{local:{get:async key=>key==='config'?{config}:{}}},permissions:{contains:async()=>permit,request:async()=>permit}};
@@ -32,9 +32,9 @@ test('统一添加流程：取消无配置副作用，获取列表填入草稿�
  await click('[data-action=fetchModels]');assert.equal(x.fetches,1);await click('[data-action=useFetched]');
  assert.equal(el('#modelId').value,'deepseek-test');assert.match(el('#modelName').value,/DeepSeek/);assert.equal(el('#modelFamily').value,'DeepSeek');
  await click('[data-action=saveModel]');assert.equal(x.config.models.length,1);assert.equal(x.config.tasks.scene,'');
- await click('.subnav [data-id=tasks]');change('#sceneModel',x.config.models[0].id);await click('[data-action=saveTasks]');
+ change('#sceneModel',x.config.models[0].id);await click('[data-action=saveTasks]');
  assert.equal(x.config.tasks.scene,x.config.models[0].id);assert.equal(x.fetches,1);
- await click('.subnav [data-id=settings]');await click('[data-action=editModel]');fill('#modelName','取消的重命名');await click('#dialog [data-action=close]');
+ await click('[data-action=editModel]');fill('#modelName','取消的重命名');await click('#dialog [data-action=close]');
  assert.notEqual(x.config.models[0].name,'取消的重命名');await click('[data-action=newModel]');fill('#modelId','discarded');await click('#dialog [data-action=close]');assert.equal(x.config.models.length,1);
 });
 test('权限拒绝：保留草稿与常驻错误，不创建服务、不请求模型',async t=>{

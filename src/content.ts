@@ -2,7 +2,7 @@ import {icon} from './icons';
 import {clampPosition} from './workflow';
 (() => {
  const marker='omni-bgm-host';if(document.getElementById(marker))return;
- const host=document.createElement('div');host.id=marker;host.dataset.version='1.4.3';document.documentElement.append(host);const root=host.attachShadow({mode:'closed'});
+ const host=document.createElement('div');host.id=marker;host.dataset.version='1.4.5';document.documentElement.append(host);const root=host.attachShadow({mode:'closed'});
  root.innerHTML=`<style>:host{all:initial;position:fixed;right:24px;bottom:28px;z-index:2147483600;font:13px/1.6 "Segoe UI","Microsoft YaHei",sans-serif;color:#edf2ee;color-scheme:dark}*{box-sizing:border-box}section{width:292px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);overflow:auto;background:#171d19;border:1px solid #63796a;border-radius:12px;padding:16px;box-shadow:0 12px 32px #0006}header{display:flex;justify-content:space-between;align-items:center;padding-bottom:12px;border-bottom:1px solid #35443a;color:#b8e2c1;cursor:grab}header strong{display:flex;align-items:center;gap:8px}.ui-icon{vertical-align:middle;flex:none}button,select{font:inherit;color:inherit;background:transparent;border:1px solid #63796a;border-radius:6px;padding:6px 10px;min-height:34px;cursor:pointer}button:hover{background:#242e27}button:disabled{opacity:.55}button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid #b8e2c1;outline-offset:2px}header button{padding:5px 8px;border-color:transparent}header span{display:flex;gap:4px}.row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}p{margin:10px 0;overflow-wrap:anywhere}#track{font-size:16px;font-weight:600;margin:14px 0 8px}small{color:#b3c0b7}#status{display:block;margin:10px 0;font-size:12px}.error{color:#ffb5ac}.error:empty{display:none}input{width:100%;accent-color:#b8e2c1}select{max-width:100%;min-width:0;flex:1;background:#111713}.hidden{display:none!important}strong{font-weight:600}#compactPause{background:#b8e2c1;border-color:#b8e2c1;color:#14291b;flex:1}#compactNext{flex:1}#pause,#next{display:none}#body{padding-top:4px}#start{width:100%;margin:12px 0 8px}#settings{width:100%;margin-top:12px;border-color:#35443a;color:#b3c0b7}#resetPosition{font-size:12px;border-color:transparent;color:#b3c0b7}#retry{font-size:12px}::selection{background:#b8e2c1;color:#14291b}button{transition:background-color .16s ease-out}@media(prefers-reduced-motion:reduce){button{transition:none}}</style><section><header><strong>${icon('music')}随境配乐</strong><span><button id="fold" aria-label="展开播放器" aria-expanded="false">${icon('plus')}</button> <button id="hide" aria-label="隐藏悬浮播放器">${icon('close')}</button></span></header><p id="track">尚未启用</p><div class="row"><button id="compactPause">暂停</button><button id="compactNext">下一首</button></div><div id="body" class="hidden"><small id="status"></small><p id="error" class="error"></p><div class="row"><button id="enable">开启</button><button id="pause">暂停</button><button id="next">下一首</button><button id="retry" title="手动发送一次情境判断请求">重判 · 1 次请求</button></div><div class="row"><select id="mood" aria-label="锁定情绪"><option value="">自动情绪</option></select><button id="lock">锁曲</button></div><p><input id="volume" type="range" min="0" max="1" step="0.01" aria-label="音量"></p><button id="start" title="发送当前完整回合；缓存命中不计新请求">开始配乐</button><button id="resetPosition">重置位置</button><button id="settings">曲库与设置 ↗</button></div></section>`;
  const $=(id:string)=>root.getElementById(id) as any;let state:any={},controlError='',folded=true,lastSig='',changed=Date.now(),lastSent='',lastBusy=0,sending=false;
  const send=(m:any)=>chrome.runtime.sendMessage(m);
@@ -24,11 +24,16 @@ import {clampPosition} from './workflow';
  function render(s:any){if(!s)return;state=s;if(!drag)pos=s.floatPosition;host.style.display=s.floating&&/^\/game\//.test(location.pathname)?'block':'none';$('track').textContent=s.trackName||'未播放';$('status').textContent=[s.status,s.moods?.find(m=>m.id===s.decision?.mood)?.name,s.decision?.tags?.join(' · ')].filter(Boolean).join(' / ');$('error').textContent=controlError||s.error||'';$('enable').textContent=s.enabled?'关闭自动':'开启自动';$('pause').textContent=s.paused?'恢复':'暂停';$('compactPause').textContent=s.paused?'恢复':'暂停';$('lock').textContent=s.lockTrack?'解锁曲目':'锁曲';if(root.activeElement!==$('volume'))$('volume').value=s.volume;
  const signature=JSON.stringify(s.moods);if($('mood').dataset.sig!==signature){$('mood').replaceChildren(new Option('自动情绪',''),...s.moods.filter(m=>!m.disabled).map(m=>new Option(m.name,m.id)));$('mood').dataset.sig=signature;}$('mood').value=s.lockMood||'';place();
  }
+ let pendingTick=false,wakeTimer:number|undefined,eventTimer:number|undefined;
+ let wasBusy=false,completedAt=0,missingSince:number|null=null;
+ let lastReady:{gameId:string;world:string;turn:number;text:string}|null=null;
+ function markBusy(){wasBusy=true;completedAt=0;lastBusy=Date.now();clearTimeout(wakeTimer);}
+ function wakeAt(time:number){clearTimeout(wakeTimer);wakeTimer=setTimeout(()=>void tick(),Math.max(1,time-Date.now()));}
  let confirmedGame:{id:string;world:string}|null=null;
  function snapshot(){
   if(document.visibilityState==='hidden')return {game:/^\/game\/[^/]+/.test(location.pathname),visible:false};
   const gameId=/^\/game\/[^/]+/.test(location.pathname)?location.pathname.split('/')[2]:'';
-  if(confirmedGame?.id!==gameId)confirmedGame=null;
+  if(confirmedGame?.id!==gameId){confirmedGame=null;wasBusy=false;completedAt=0;lastReady=null;missingSince=null;lastSig='';clearTimeout(wakeTimer);}
   if(!gameId)return {game:false,visible:true};
   const scene=document.querySelector('.scene-content > .scene') as HTMLElement;const counter=document.querySelector('.page-status')?.textContent||'';const match=counter.match(/第\s*(\d+)\s*\/\s*(\d+)\s*回合/);
   const input=document.querySelector('textarea[placeholder="在这里自定义你的行动..."]');
@@ -36,23 +41,47 @@ import {clampPosition} from './workflow';
   const submit=buttons.find(b=>/^提交$/.test(b.textContent.trim()));
   const generating=buttons.some(b=>/^(停止生成|停止推演|取消生成)$/.test(b.textContent.trim()));
   const worldNode=[...document.querySelectorAll('span')].find(x=>/^世界线「[^」]+」$/.test(x.textContent.trim()));
-  const world=worldNode?.textContent.trim()||confirmedGame?.world||'unknown';
-  if(!scene||!match||!input){
-   // A known game's generation view is still foreground playback, but cannot be classified.
-   if(confirmedGame&&(generating||(scene&&match))){lastBusy=Date.now();return {game:true,visible:true,scene:{gameId,world,ready:false}};}
-   confirmedGame=null;return {game:false,visible:true};
+  const observedWorld=worldNode?.textContent.trim()||confirmedGame?.world||'unknown';
+  const text=scene?.innerText.trim()||'';const turn=match?+match[1]:0;
+  // Late world-label repaint must not start a second request for the same completed text.
+  const world=lastReady?.gameId===gameId&&lastReady.turn===turn&&lastReady.text===text?lastReady.world:observedWorld;
+  if(!scene||!match||!input||text.length<=10){
+   // Successful generation briefly removes the old scene before inserting its replacement.
+   if(missingSince===null)missingSince=Date.now();
+   if(confirmedGame&&(generating||Date.now()-missingSince<5000)){markBusy();return {game:true,visible:true,scene:{gameId,world:confirmedGame.world,ready:false}};}
+   return {game:false,visible:true};
   }
+  missingSince=null;
   confirmedGame={id:gameId,world};
   const busy=!submit||submit.disabled||submit.getAttribute('aria-disabled')==='true'||submit.classList.contains('is-loading')||generating;
-  if(busy)lastBusy=Date.now();
-  const text=scene.innerText.trim();const turn=+match[1];
+  if(busy)markBusy();else if(wasBusy){wasBusy=false;completedAt=Date.now();}
   const sig=JSON.stringify([gameId,world,turn,text]);if(sig!==lastSig){lastSig=sig;changed=Date.now();}
-  // Require both an enabled submit control and a quiet body; never treat the static AI生成 label as activity.
-  const ready=!busy&&Date.now()-changed>2500&&Date.now()-lastBusy>1000&&text.length>10;
+  // The site replaces complete text, rather than streaming it. A changed body takes
+  // the short settling path even when the empty frame was too brief to observe.
+  const fast=!!lastReady&&lastReady.gameId===gameId&&lastReady.text!==text;
+  const due=fast?Math.max(changed+300,completedAt?completedAt+300:0):Math.max(changed+2501,lastBusy+1001);
+  const committed=lastReady?.gameId===gameId&&lastReady.world===world&&lastReady.turn===turn&&lastReady.text===text;
+  const ready=!busy&&(committed||Date.now()>=due);
+  clearTimeout(wakeTimer);if(!busy&&!ready)wakeAt(due);
+  if(ready)lastReady={gameId,world,turn,text};
   const context=turn===+match[2]?[...document.querySelectorAll('#pane-player-entity li')].filter(e=>['位置','当前目标','短期目标'].includes(e.querySelector('.item-name')?.textContent.trim())).map(e=>e.querySelector('.item-name')?.textContent+':'+e.querySelector('.item-value')?.textContent).join('；').slice(0,600):'';
   const sceneData={text,world,turn,total:+match[2],gameId,context,ready,title:document.querySelector('h1')?.textContent?.trim().slice(0,80)||'Omnimundia'};
   return {game:true,visible:document.visibilityState==='visible',scene:sceneData};
  }
- async function tick(){if(sending)return;sending=true;try{const data=snapshot();const sig=JSON.stringify(data.scene);const msg:any={type:'heartbeat',game:data.game,visible:data.visible};if(data.visible&&sig!==lastSent){msg.scene=data.scene||{ready:false};lastSent=sig;}const r=await send(msg);if(r.ok){render(r.data);if(r.data.needScene)lastSent='';}}catch{host.style.display=/^\/game\//.test(location.pathname)?'block':'none';$('track').textContent='扩展连接已断开';$('status').textContent='更新扩展后请刷新游戏标签页';$('body').classList.remove('hidden');}finally{sending=false;}}
+ async function tick(){if(sending){pendingTick=true;return;}sending=true;try{const data=snapshot();const sig=JSON.stringify(data.scene);const msg:any={type:'heartbeat',game:data.game,visible:data.visible};if(data.visible&&sig!==lastSent){msg.scene=data.scene||{ready:false};}const r=await send(msg);if(r.ok){if(data.visible)lastSent=sig;render(r.data);if(r.data.needScene)lastSent='';}}catch{host.style.display=/^\/game\//.test(location.pathname)?'block':'none';$('track').textContent='扩展连接已断开';$('status').textContent='更新扩展后请刷新游戏标签页';$('body').classList.remove('hidden');}finally{sending=false;if(pendingTick){pendingTick=false;wakeAt(Date.now()+1);}}}
+ // Coalesce relevant mutations; keep the existing heartbeat for playback leases.
+ function relevant(node:Node,descend=true){
+  const el=node.nodeType===Node.ELEMENT_NODE?node as Element:node.parentElement;
+  if(!el||el===host||host.contains(el))return false;
+  if(el.closest('.scene-content,.page-status,button,textarea'))return true;
+  if(el.matches('span')&&/^世界线「[^」]+」$/.test(el.textContent.trim()))return true;
+  if(!descend)return false;
+  return !!el.querySelector('.scene-content,.page-status,button,textarea')||[...el.querySelectorAll('span')].some(x=>/^世界线「[^」]+」$/.test(x.textContent.trim()));
+ }
+ new MutationObserver(records=>{
+  if(document.visibilityState==='hidden'||!/^\/game\//.test(location.pathname))return;
+  const matches=records.some(r=>r.type==='childList'?[...r.addedNodes,...r.removedNodes].some(n=>relevant(n))||relevant(r.target,false):relevant(r.target,false));
+  if(matches&&eventTimer===undefined)eventTimer=setTimeout(()=>{eventTimer=undefined;void tick();},50);
+ }).observe(document.body,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['disabled','aria-disabled','class']});
  setInterval(tick,1000);document.addEventListener('visibilitychange',tick);window.addEventListener('pagehide',()=>send({type:'heartbeat',game:false,visible:false}).catch(()=>{}));void tick();
 })();

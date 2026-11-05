@@ -1,16 +1,16 @@
 import {Config,mergeConfig,validEndpoint} from './core';
 import type {Connection,ModelProfile} from './profile-types';
 export function upgradeConfig(raw:any):Config{
- const c=mergeConfig(raw);if(raw==null){c.connections=[];c.models=[];c.tasks={scene:'',track:''};c.maxOutput=220;c.version=2;return c;}if(c.version===2&&c.connections&&c.models&&c.tasks)return c;
+ const c=mergeConfig(raw);if(raw==null){c.connections=[];c.models=[];c.tasks={scene:''};c.maxOutput=220;c.version=2;return c;}if(c.version===2&&c.connections&&c.models&&c.tasks){c.tasks={scene:c.tasks.scene};return c;}
  const names={deepseek:'DeepSeek 官方',local:'本机兼容服务',jev:'TypeSafe Jev',custom:'自定义兼容接口'};
  c.connections=Object.entries(c.profiles).map(([id,p]:[string,any])=>({id,name:names[id],protocol:id==='jev'?'systemone':'chat',base:p.base,key:p.key,auth:id==='local'&&!p.key?'none':'bearer',header:'x-api-key',prefix:'',path:id==='jev'?'/systemone':'/chat/completions',modelsPath:id==='jev'?'':'/models',timeout:c.timeout,headers:{}}));
- c.models=c.connections.map(p=>({id:p.id+'-model',connectionId:p.id,name:names[p.id],model:c.profiles[p.id].model,output:p.protocol==='systemone'?'typed':c.profiles[p.id].format==='json_object'?'json_object':'prompt',thinking:p.id==='deepseek'?'deepseek-off':'omit',tokenField:p.protocol==='systemone'?'none':'max_tokens',stream:false,extra:{}}));
- c.tasks={scene:c.backend+'-model',track:''};c.maxOutput=220;c.version=2;return c;
+ c.models=c.connections.map(p=>({id:p.id+'-model',connectionId:p.id,name:names[p.id],model:c.profiles[p.id].model,output:p.protocol==='systemone'?'typed':c.profiles[p.id].format==='json_object'?'json_object':'prompt',tokenField:p.protocol==='systemone'?'none':'max_tokens',stream:false,extra:{}}));
+ c.tasks={scene:c.backend+'-model'};c.maxOutput=220;c.version=2;return c;
 }
-export function resolve(c:Config,mode='scene'){
- const u=c.version===2?c:upgradeConfig(c),id=mode==='track'?(u.tasks.track||u.tasks.scene):u.tasks.scene;
+export function resolve(c:Config){
+ const u=c.version===2?c:upgradeConfig(c),id=u.tasks.scene;
  const model=u.models.find(m=>m.id===id),connection=u.connections.find(p=>p.id===model?.connectionId);
- if(!model||!connection||model.disabled||connection.disabled)throw Error('所选用途没有有效的连接或模型，请到 AI 配置中添加模型并分配用途');return {model,connection};
+ if(!model||!connection||model.disabled||connection.disabled)throw Error('当前没有有效的判断模型，请在 AI 设置中添加并选择模型');return {model,connection};
 }
 export function objectParams(value:any,reserved:string[]=[]){if(!value||typeof value!=='object'||Array.isArray(value))throw Error('附加参数必须是 JSON 对象');for(const k of Object.keys(value))if(reserved.includes(k.toLowerCase()))throw Error('不能覆盖保留字段：'+k);return value;}
 export function validateConnection(p:Connection){
@@ -25,10 +25,9 @@ export function validateConnection(p:Connection){
 }
 export function validateModel(m:ModelProfile,p:Connection){
  if(!m.name.trim()||!m.model.trim())throw Error('显示名称与模型 ID 不能为空');
- if(!['json_object','json_schema','prompt','typed'].includes(m.output)||!['deepseek-off','omit'].includes(m.thinking)||!['max_tokens','max_completion_tokens','none'].includes(m.tokenField))throw Error('模型能力配置无效');
+ if(!['json_object','json_schema','prompt','typed'].includes(m.output)||!['max_tokens','max_completion_tokens','none'].includes(m.tokenField))throw Error('模型能力配置无效');
  if((p.protocol==='systemone')!==(m.output==='typed'))throw Error('Jev 需要类型化输出，聊天接口不能使用类型化输出');
  if(p.protocol==='systemone'&&m.stream)throw Error('Jev 不使用聊天 SSE');
- if(m.thinking==='deepseek-off'&&(p.protocol!=='chat'||!m.model.startsWith('deepseek-')))throw Error('关闭思考预设仅用于已验证的 DeepSeek 模型；其他模型请选择不发送');
  objectParams(m.extra,['messages','input','state','questions','model','authorization','api_key','url','base_url','stream','stream_options','max_tokens','max_completion_tokens','max_output_tokens','response_format','thinking','__proto__','constructor','prototype']);
 }
 export function headersFor(p:Connection){const headers:Record<string,string>={'Content-Type':'application/json',...p.headers};if(p.auth!=='none'){if(!p.key.trim())throw Error('请填写 API Key，或为本地服务选择无鉴权');headers[p.auth==='bearer'?'Authorization':p.header]=(p.auth==='bearer'?'Bearer ':p.prefix)+p.key.trim();}return headers;}

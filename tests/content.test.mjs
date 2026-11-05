@@ -24,6 +24,7 @@ test('新回合生成时暂缺正文控件或世界线标签，保留同一游�
  // The game rerenders controls while generating the next turn.
  const input=w.document.querySelector('textarea'),world=w.document.querySelector('#world');input.remove();world.remove();w.document.querySelector('button').textContent='停止推演';now+=1000;await tick();assert.equal(calls.at(-1).game,true,'生成过渡不能被当作离开游戏');assert.equal(calls.at(-1).scene.ready,false);assert.equal(calls.at(-1).scene.world,'世界线「abc」');
  w.document.body.append(input);w.document.querySelector('button').textContent='提交';w.document.querySelector('.scene').textContent='新的一回合，我们依然在林间休息并轻声交谈。';w.document.querySelector('.page-status').textContent='第 2 / 2 回合';now+=1000;await tick();assert.equal(calls.at(-1).scene.world,'世界线「abc」','暂缺标签不能切换为 unknown 世界线');now+=3000;await tick();assert.equal(calls.at(-1).scene.ready,true);
- w.document.body.append(world);world.textContent='世界线「other」';now+=1000;await tick();assert.equal(calls.at(-1).scene.world,'世界线「other」');
+ w.document.body.append(world);world.textContent='世界线「other」';now+=1000;await tick();assert.equal(calls.filter(m=>m.scene).at(-1).scene.world,'世界线「abc」','同一已提交正文的迟到世界线标签不重复触发判断');
+ w.document.querySelector('.scene').textContent='再下一回合，我们踏入全新的村落，继续探索。';now+=1000;await tick();assert.equal(calls.at(-1).scene.world,'世界线「other」','新正文应采用最新世界线');
  w.history.pushState({},'','/game/another');input.remove();w.document.querySelector('button').textContent='停止推演';await tick();assert.equal(calls.at(-1).game,false,'不能把上一游戏状态沿用给另一游戏');
 });
