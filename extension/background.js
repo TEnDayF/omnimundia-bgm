@@ -535,17 +535,20 @@
     if (f?.scene.gameId) {
       const owner = JSON.stringify([f.scene.gameId, f.scene.world]);
       if (state.owner && state.owner !== owner) {
+        const previousGame = JSON.parse(state.owner)[0];
         epoch++;
         controller?.abort();
         state.pending = false;
         attempt = "";
         state.key = "";
         state.decision = null;
-        state.trackId = "";
-        state.trackName = "";
-        state.position = 0;
-        state.history = [];
-        await audio("stop");
+        if (previousGame !== f.scene.gameId) {
+          state.trackId = "";
+          state.trackName = "";
+          state.position = 0;
+          state.history = [];
+          await audio("stop");
+        }
       }
       state.owner = owner;
     }

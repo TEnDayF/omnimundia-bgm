@@ -6,7 +6,7 @@
 
 ## 下载与安装
 
-在 [Releases](https://github.com/TEnDayF/omnimundia-bgm/releases) 下载 `Omnimundia-BGM-Chrome-v1.4.1.zip`，解压后得到 `extension` 文件夹。
+在 [Releases](https://github.com/TEnDayF/omnimundia-bgm/releases) 下载 `Omnimundia-BGM-Chrome-v1.4.3.zip`，解压后得到 `extension` 文件夹。
 
 1. 打开 Chrome 扩展管理页，开启开发者模式。
 2. 选择“加载已解压的扩展程序”，选中含 `manifest.json` 的 `extension` 文件夹。
@@ -58,7 +58,7 @@ npm run build
 npm test
 ```
 
-构建产物在 `extension/`；测试辅助构建在 `tests/built/`。仓库包含可直接加载的插件构建产物。当前 49 项自动测试通过，覆盖请求去重、错误处理、缓存、数据恢复、界面流程及音频控制。
+构建产物在 `extension/`；测试辅助构建在 `tests/built/`。仓库包含可直接加载的插件构建产物。当前 52 项自动测试通过，覆盖请求去重、错误处理、缓存、数据恢复、界面流程及音频控制。
 
 目录：`src/` 为 TypeScript 源码，`extension/` 为浏览器插件，`tests/` 为自动测试。实现结构见 [架构说明](docs/ARCHITECTURE.md)。
 

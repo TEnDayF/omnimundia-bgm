@@ -1,18 +1,26 @@
 import test from 'node:test';import assert from 'node:assert/strict';import vm from 'node:vm';import {readFile} from 'node:fs/promises';import {IDBFactory} from 'fake-indexeddb';import {mergeConfig} from './built/core.js';
 const code=await readFile(new URL('../extension/background.js',import.meta.url),'utf8');
 const wait=async(fn)=>{for(let i=0;i<150;i++){if(await fn())return;await new Promise(r=>setTimeout(r,5));}throw Error('等待状态超时');};
-async function harness(fetcher){
+async function harness(fetcher,withAudio=false){
  const indexedDB=new IDBFactory();const database=await new Promise((res,rej)=>{const r=indexedDB.open('omni-bgm',1);r.onupgradeneeded=()=>['tracks','blobs','cache'].forEach(s=>r.result.createObjectStore(s,{keyPath:'id'}));r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});
  await new Promise((res,rej)=>{const tx=database.transaction('tracks','readwrite');for(const mood of ['relax','battle','tension'])tx.objectStore('tracks').put({id:mood,name:mood,moods:[mood],tags:[],exclude:[],gain:1,intensity:-1});tx.oncomplete=res;tx.onerror=rej;});
+ const audioInstances=[];let audioListener;
+ if(withAudio){
+  await new Promise(r=>{const tx=database.transaction('blobs','readwrite');for(const id of ['relax','battle','tension'])tx.objectStore('blobs').put({id,blob:new Blob(['synthetic-audio'])});tx.oncomplete=r;});
+ }
  const config=mergeConfig({enabled:true});config.profiles.deepseek.key='fake-test-key';
  const data={local:{config},session:{}};const storage=k=>({get:async key=>structuredClone({[key]:data[k][key]}),set:async v=>{Object.assign(data[k],structuredClone(v));},setAccessLevel:async()=>{}});
  let listener,focused=true,doc=false,currentTab=1;const audio=[];const event=()=>({addListener(){}});
- const chrome={storage:{local:storage('local'),session:storage('session')},runtime:{getURL:p=>'chrome-extension://test/'+p,onMessage:{addListener:f=>listener=f},onInstalled:event(),openOptionsPage:async()=>{},sendMessage:async m=>{audio.push(m);return {ok:true};}},offscreen:{hasDocument:async()=>doc,createDocument:async()=>{doc=true;},Reason:{AUDIO_PLAYBACK:'AUDIO_PLAYBACK'}},windows:{getLastFocused:async()=>({id:1,focused,state:'normal'}),onFocusChanged:event()},tabs:{query:async q=>q?.url?[{id:1,url:'https://omnimundia.cn/game/g'},{id:2,url:'https://omnimundia.cn/game/g2'}]:[{id:currentTab}],onActivated:event(),onRemoved:event(),onUpdated:event()}};
+ const chrome={storage:{local:storage('local'),session:storage('session')},runtime:{getURL:p=>'chrome-extension://test/'+p,onMessage:{addListener:f=>listener=f},onInstalled:event(),openOptionsPage:async()=>{},sendMessage:async m=>{audio.push(m);return withAudio?new Promise(r=>audioListener(m,{},r)):{ok:true};}},offscreen:{hasDocument:async()=>doc,createDocument:async()=>{doc=true;},Reason:{AUDIO_PLAYBACK:'AUDIO_PLAYBACK'}},windows:{getLastFocused:async()=>({id:1,focused,state:'normal'}),onFocusChanged:event()},tabs:{query:async q=>q?.url?[{id:1,url:'https://omnimundia.cn/game/g'},{id:2,url:'https://omnimundia.cn/game/g2'}]:[{id:currentTab}],onActivated:event(),onRemoved:event(),onUpdated:event()}};
+ if(withAudio){
+  class AudioDouble{paused=true;currentTime=0;duration=300;volume=1;handlers=new Map();loaded=false;constructor(){audioInstances.push(this)}addEventListener(name,fn){this.handlers.set(name,fn)}async play(){if(!this.loaded){this.loaded=true;this.handlers.get('loadedmetadata')?.()}this.paused=false}pause(){this.paused=true}}
+  vm.runInNewContext(await readFile(new URL('../extension/offscreen.js',import.meta.url),'utf8'),{chrome:{runtime:{onMessage:{addListener:f=>audioListener=f},sendMessage:m=>new Promise(r=>listener(m,{url:'chrome-extension://test/offscreen.html'},r))}},indexedDB,Audio:AudioDouble,URL:{createObjectURL:()=> 'blob:test-'+audioInstances.length,revokeObjectURL:()=>{}},Date,setInterval:()=>1,clearInterval:()=>{}});
+ }
  vm.runInNewContext(code,{chrome,indexedDB,crypto,TextEncoder,URL,AbortController,setTimeout,clearTimeout,console,fetch:fetcher});
  const send=(m,site=false)=>new Promise((res,rej)=>{listener(m,site?{tab:{id:1},url:'https://omnimundia.cn/game/g'}:{url:'chrome-extension://test/options.html'},r=>r.ok?res(r.data):rej(Error(r.error)));});
  const scene=(text='安静喝茶',turn=1)=>send({type:'heartbeat',game:true,visible:true,scene:{gameId:'g',world:'w',turn,total:turn,text,ready:true}},true);
  const sceneAt=(id,text,turn,gameId)=>new Promise((res,rej)=>listener({type:'heartbeat',game:true,visible:true,scene:{gameId,world:'w',turn,text,ready:true}},{tab:{id},url:'https://omnimundia.cn/game/'+gameId},r=>r.ok?res(r.data):rej(Error(r.error))));
- return {send,scene,sceneAt,setTab:id=>currentTab=id,audio,data,database,setFocus:x=>focused=x,state:()=>send({type:'state'})};
+ return {send,scene,sceneAt,audioInstances,setTab:id=>currentTab=id,audio,data,database,setFocus:x=>focused=x,state:()=>send({type:'state'})};
 }
 function response(mood='relax'){return {ok:true,json:async()=>({choices:[{message:{content:JSON.stringify({mood,intensity:1,tags:[]})}}],usage:{prompt_tokens:60,completion_tokens:12}})};}
 test('新回合一次请求；重复心跳、下一首、音量和返回页面不重复请求',async()=>{
@@ -45,3 +53,23 @@ test('F10：合并类别迁移曲目及锁定，恢复后类别关联可用',asy
 test('F12：切换游戏不沿用上一游戏判断，固定其他游戏不发请求',async()=>{let calls=0,finish;const h=await harness(async()=>{calls++;if(calls===1)return response('relax');return new Promise(r=>finish=r);});await h.scene();await wait(async()=>(await h.state()).key);h.setTab(2);await h.sceneAt(2,'另一游戏新剧情',1,'g2');await wait(()=>calls===2);assert.equal((await h.state()).decision,null);assert.equal((await h.state()).trackId,'');finish(response('battle'));await wait(async()=>(await h.state()).decision?.mood==='battle');await h.send({type:'control',command:'pinTab',value:1});await h.sceneAt(2,'另一个回合',2,'g2');assert.equal(calls,2);assert.equal((await h.state()).pinnedTab,1);});
 
 test('无模型的首次配置：自动开关或新回合不会抛连接错误或发送请求',async()=>{let calls=0;const h=await harness(async()=>{calls++;return response();});await h.send({type:'saveConfig',patch:{connections:[],models:[],tasks:{scene:'',track:''}}});await h.scene('未配置',2);await new Promise(r=>setTimeout(r,20));assert.equal(calls,0);assert.match((await h.state()).status,/配置模型/);});
+
+test('真实页面检测到后台：新回合生成与模型等待期间续播，同曲不重启，不同曲才淡入切换',async(t)=>{
+ const {JSDOM}=await import('jsdom');const content=await readFile(new URL('../extension/content.js',import.meta.url),'utf8');let calls=0,complete;
+ const h=await harness(async()=>{calls++;return calls===1?response('relax'):new Promise(r=>complete=r)});
+ const dom=new JSDOM('<div class="scene-content"><div class="scene">现在正在森林里安静地喝茶聊天。</div></div><span class="page-status">第 1 / 1 回合</span><span id="world">世界线「w」</span><textarea placeholder="在这里自定义你的行动..."></textarea><button>提交</button>',{url:'https://omnimundia.cn/game/g',runScripts:'outside-only',pretendToBeVisual:true});t.after(()=>dom.window.close());const w=dom.window;let tick,now=10000;w.Date.now=()=>now;w.setInterval=fn=>{tick=fn};Object.defineProperty(w.HTMLElement.prototype,'innerText',{get(){return this.textContent}});w.HTMLElement.prototype.getClientRects=()=>[{}];let firstHeartbeat=false;w.chrome={runtime:{sendMessage:async m=>{const data=await h.send(m,true);firstHeartbeat=true;return {ok:true,data};}}};w.eval(content);await wait(()=>firstHeartbeat);now+=3000;await tick();await wait(async()=>(await h.state()).trackId==='relax'&&!(await h.state()).pending);const before=h.audio.length;
+ const input=w.document.querySelector('textarea'),world=w.document.querySelector('#world');input.remove();world.remove();w.document.querySelector('button').textContent='停止推演';now+=1000;await tick();assert.equal(calls,1);assert.equal((await h.state()).trackId,'relax');
+ w.document.body.append(input);w.document.querySelector('button').textContent='提交';w.document.querySelector('.page-status').textContent='第 2 / 2 回合';w.document.querySelector('.scene').textContent='新的一回合，大家继续安静地喝茶聊天。';now+=1000;await tick();now+=3000;await tick();await wait(()=>calls===2);assert.equal((await h.state()).pending,true);
+ for(let i=0;i<6;i++){now+=1000;await tick();}
+ assert.ok(h.audio.slice(before).some(m=>m.command==='lease'));assert.ok(!h.audio.slice(before).some(m=>['pause','stop','play'].includes(m.command)),'判断期间应只续租，不停播或重播');
+ complete(response('relax'));await wait(async()=>!(await h.state()).pending);const same=h.audio.filter(m=>m.command==='play').at(-1);assert.equal(same.id,'relax');assert.equal(same.restart,false);assert.equal(same.fade,0);assert.equal(calls,2);
+ w.document.querySelector('.page-status').textContent='第 3 / 3 回合';w.document.querySelector('.scene').textContent='敌人突然出现，我们正面迎击，激战开始。';now+=1000;await tick();now+=3000;await tick();await wait(()=>calls===3);complete(response('battle'));await wait(async()=>(await h.state()).trackId==='battle');assert.equal(h.audio.filter(m=>m.command==='play').at(-1).fade,2);
+ h.setFocus(false);await tick();assert.equal(h.audio.at(-1).command,'pause','离开前台仍必须停播');
+});
+
+test('同一游戏新回合世界线编号变化，模型判断前不得销毁音频或重置进度',async(t)=>{
+ let count=0,finish;const h=await harness(async()=>{count++;return count===1?response('relax'):new Promise(r=>finish=r)},true);t.after(()=>{if(finish)finish(response('relax'))});await h.scene('旧回合',6);await wait(async()=>(await h.state()).trackId==='relax'&&!(await h.state()).pending);const playing=h.audioInstances[0];playing.currentTime=42;await h.send({type:'audioEvent',id:'relax',event:'position',position:42});const start=h.audio.length;
+ await h.send({type:'heartbeat',game:true,visible:true,scene:{gameId:'g',world:'updated-world',turn:7,total:7,text:'同一游戏的新一回合，页面世界线编号也已改变',ready:true}},true);await wait(()=>count===2);
+ assert.equal((await h.state()).trackId,'relax','新回合编号变化不能清空曲目');assert.equal((await h.state()).position,42);assert.equal(playing.paused,false);assert.equal(playing.currentTime,42);assert.ok(!h.audio.slice(start).some(m=>m.command==='stop'||m.command==='pause'),'判断前不能发送停止或暂停');
+ finish(response('relax'));await wait(async()=>!(await h.state()).pending);const play=h.audio.filter(m=>m.command==='play').at(-1);assert.equal(play.id,'relax');assert.equal(play.restart,false);assert.equal(play.position,42);assert.equal(h.audioInstances.length,1,'同曲不能创建新的音频实例');assert.equal(h.audioInstances[0],playing);assert.equal(playing.paused,false);assert.equal(playing.currentTime,42,'同曲保持实时播放秒数');
+});

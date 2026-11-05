@@ -36,7 +36,7 @@
     if (document.getElementById(marker)) return;
     const host = document.createElement("div");
     host.id = marker;
-    host.dataset.version = "1.4.1";
+    host.dataset.version = "1.4.3";
     document.documentElement.append(host);
     const root = host.attachShadow({ mode: "closed" });
     root.innerHTML = `<style>:host{all:initial;position:fixed;right:24px;bottom:28px;z-index:2147483600;font:13px/1.6 "Segoe UI","Microsoft YaHei",sans-serif;color:#edf2ee;color-scheme:dark}*{box-sizing:border-box}section{width:292px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);overflow:auto;background:#171d19;border:1px solid #63796a;border-radius:12px;padding:16px;box-shadow:0 12px 32px #0006}header{display:flex;justify-content:space-between;align-items:center;padding-bottom:12px;border-bottom:1px solid #35443a;color:#b8e2c1;cursor:grab}header strong{display:flex;align-items:center;gap:8px}.ui-icon{vertical-align:middle;flex:none}button,select{font:inherit;color:inherit;background:transparent;border:1px solid #63796a;border-radius:6px;padding:6px 10px;min-height:34px;cursor:pointer}button:hover{background:#242e27}button:disabled{opacity:.55}button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid #b8e2c1;outline-offset:2px}header button{padding:5px 8px;border-color:transparent}header span{display:flex;gap:4px}.row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}p{margin:10px 0;overflow-wrap:anywhere}#track{font-size:16px;font-weight:600;margin:14px 0 8px}small{color:#b3c0b7}#status{display:block;margin:10px 0;font-size:12px}.error{color:#ffb5ac}.error:empty{display:none}input{width:100%;accent-color:#b8e2c1}select{max-width:100%;min-width:0;flex:1;background:#111713}.hidden{display:none!important}strong{font-weight:600}#compactPause{background:#b8e2c1;border-color:#b8e2c1;color:#14291b;flex:1}#compactNext{flex:1}#pause,#next{display:none}#body{padding-top:4px}#start{width:100%;margin:12px 0 8px}#settings{width:100%;margin-top:12px;border-color:#35443a;color:#b3c0b7}#resetPosition{font-size:12px;border-color:transparent;color:#b3c0b7}#retry{font-size:12px}::selection{background:#b8e2c1;color:#14291b}button{transition:background-color .16s ease-out}@media(prefers-reduced-motion:reduce){button{transition:none}}</style><section><header><strong>${icon("music")}\u968F\u5883\u914D\u4E50</strong><span><button id="fold" aria-label="\u5C55\u5F00\u64AD\u653E\u5668" aria-expanded="false">${icon("plus")}</button> <button id="hide" aria-label="\u9690\u85CF\u60AC\u6D6E\u64AD\u653E\u5668">${icon("close")}</button></span></header><p id="track">\u5C1A\u672A\u542F\u7528</p><div class="row"><button id="compactPause">\u6682\u505C</button><button id="compactNext">\u4E0B\u4E00\u9996</button></div><div id="body" class="hidden"><small id="status"></small><p id="error" class="error"></p><div class="row"><button id="enable">\u5F00\u542F</button><button id="pause">\u6682\u505C</button><button id="next">\u4E0B\u4E00\u9996</button><button id="retry" title="\u624B\u52A8\u53D1\u9001\u4E00\u6B21\u60C5\u5883\u5224\u65AD\u8BF7\u6C42">\u91CD\u5224 \xB7 1 \u6B21\u8BF7\u6C42</button></div><div class="row"><select id="mood" aria-label="\u9501\u5B9A\u60C5\u7EEA"><option value="">\u81EA\u52A8\u60C5\u7EEA</option></select><button id="lock">\u9501\u66F2</button></div><p><input id="volume" type="range" min="0" max="1" step="0.01" aria-label="\u97F3\u91CF"></p><button id="start" title="\u53D1\u9001\u5F53\u524D\u5B8C\u6574\u56DE\u5408\uFF1B\u7F13\u5B58\u547D\u4E2D\u4E0D\u8BA1\u65B0\u8BF7\u6C42">\u5F00\u59CB\u914D\u4E50</button><button id="resetPosition">\u91CD\u7F6E\u4F4D\u7F6E</button><button id="settings">\u66F2\u5E93\u4E0E\u8BBE\u7F6E \u2197</button></div></section>`;
@@ -148,23 +148,34 @@
       $("mood").value = s.lockMood || "";
       place();
     }
+    let confirmedGame = null;
     function snapshot() {
       if (document.visibilityState === "hidden") return { game: /^\/game\/[^/]+/.test(location.pathname), visible: false };
+      const gameId = /^\/game\/[^/]+/.test(location.pathname) ? location.pathname.split("/")[2] : "";
+      if (confirmedGame?.id !== gameId) confirmedGame = null;
+      if (!gameId) return { game: false, visible: true };
       const scene = document.querySelector(".scene-content > .scene");
       const counter = document.querySelector(".page-status")?.textContent || "";
       const match = counter.match(/第\s*(\d+)\s*\/\s*(\d+)\s*回合/);
       const input = document.querySelector('textarea[placeholder="\u5728\u8FD9\u91CC\u81EA\u5B9A\u4E49\u4F60\u7684\u884C\u52A8..."]');
-      const game = !!scene && !!match && !!input && /^\/game\/[^/]+/.test(location.pathname);
-      if (!game) return { game: false, visible: document.visibilityState === "visible" };
       const buttons = [...document.querySelectorAll("button")].filter((x) => x.getClientRects().length);
       const submit = buttons.find((b) => /^提交$/.test(b.textContent.trim()));
-      const busy = !submit || submit.disabled || submit.getAttribute("aria-disabled") === "true" || submit.classList.contains("is-loading") || buttons.some((b) => /^(停止生成|停止推演|取消生成)$/.test(b.textContent.trim()));
-      if (busy) lastBusy = Date.now();
+      const generating = buttons.some((b) => /^(停止生成|停止推演|取消生成)$/.test(b.textContent.trim()));
       const worldNode = [...document.querySelectorAll("span")].find((x) => /^世界线「[^」]+」$/.test(x.textContent.trim()));
-      const world = worldNode?.textContent.trim() || "unknown";
+      const world = worldNode?.textContent.trim() || confirmedGame?.world || "unknown";
+      if (!scene || !match || !input) {
+        if (confirmedGame && (generating || scene && match)) {
+          lastBusy = Date.now();
+          return { game: true, visible: true, scene: { gameId, world, ready: false } };
+        }
+        confirmedGame = null;
+        return { game: false, visible: true };
+      }
+      confirmedGame = { id: gameId, world };
+      const busy = !submit || submit.disabled || submit.getAttribute("aria-disabled") === "true" || submit.classList.contains("is-loading") || generating;
+      if (busy) lastBusy = Date.now();
       const text = scene.innerText.trim();
       const turn = +match[1];
-      const gameId = location.pathname.split("/")[2];
       const sig = JSON.stringify([gameId, world, turn, text]);
       if (sig !== lastSig) {
         lastSig = sig;

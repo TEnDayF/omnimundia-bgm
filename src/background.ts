@@ -23,7 +23,13 @@ async function diagnostics(){const r=await readiness(),v=await statusView();retu
 async function ensureAudio(){if(await chrome.offscreen.hasDocument())return;if(!creation)creation=chrome.offscreen.createDocument({url:'offscreen.html',reasons:[chrome.offscreen.Reason.AUDIO_PLAYBACK],justification:'播放用户本地导入的背景音乐并进行交叉淡入淡出'}).finally(()=>creation=null);await creation;}
 async function audio(command:string,data:any={},create=false){if(create)await ensureAudio();if(!await chrome.offscreen.hasDocument())return;return chrome.runtime.sendMessage({target:'audio',command,...data});}
 async function foreground(){const w=await chrome.windows.getLastFocused();if(!w.focused||w.state==='minimized')return null;const [t]=await chrome.tabs.query({active:true,windowId:w.id});if(!t?.id||(state.pinnedTab&&state.pinnedTab!==t.id))return null;const s=scenes.get(t.id);if(!s?.game||!s.visible||Date.now()-s.seen>4500)return null;return {tab:t.id,scene:s};}
-async function gate(){await ready;const f=await foreground();const id=f?.tab??null;if(id!==activeTab){activeTab=id;epoch++;controller?.abort();controller=null;state.pending=false;attempt='';}if(f?.scene.gameId){const owner=JSON.stringify([f.scene.gameId,f.scene.world]);if(state.owner&&state.owner!==owner){epoch++;controller?.abort();state.pending=false;attempt='';state.key='';state.decision=null;state.trackId='';state.trackName='';state.position=0;state.history=[];await audio('stop');}state.owner=owner;}return f;}
+async function gate(){await ready;const f=await foreground();const id=f?.tab??null;if(id!==activeTab){activeTab=id;epoch++;controller?.abort();controller=null;state.pending=false;attempt='';}if(f?.scene.gameId){const owner=JSON.stringify([f.scene.gameId,f.scene.world]);if(state.owner&&state.owner!==owner){
+ // The site's displayed world identifier can change when a turn finishes.
+ // Invalidate the decision, but only a different game may dispose the playing track.
+ const previousGame=JSON.parse(state.owner)[0];
+ epoch++;controller?.abort();state.pending=false;attempt='';state.key='';state.decision=null;
+ if(previousGame!==f.scene.gameId){state.trackId='';state.trackName='';state.position=0;state.history=[];await audio('stop');}
+ }state.owner=owner;}return f;}
 function canPlay(){return c.enabled&&!c.paused;}
 async function pause(){await audio('pause');}
 async function lease(){if(leaseBusy)return;leaseBusy=true;try{const f=await gate();if(!f||!canPlay()){await pause();return;}if(state.trackId){await audio('lease',{until:Date.now()+4500,volume:c.volume},false);} }finally{leaseBusy=false;}}

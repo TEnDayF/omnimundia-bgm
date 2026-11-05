@@ -7,6 +7,7 @@ test('双音轨交叉淡入淡出、立即暂停、续播与租期失效保护',
  vm.runInNewContext(code,{chrome:{runtime:{onMessage:{addListener:f=>listener=f},sendMessage:async m=>events.push(m)}},indexedDB,URL:{createObjectURL:()=>Math.random().toString(),revokeObjectURL:()=>{}},Audio:FakeAudio,Date:{now:()=>now},setInterval:(fn,ms)=>{timers.set(++nextTimer,{fn,ms});return nextTimer;},clearInterval:id=>timers.delete(id)});
  const send=m=>new Promise(r=>listener({target:'audio',...m},{},r));const ticks=ms=>[...timers.values()].filter(t=>t.ms===ms).forEach(t=>t.fn());
  await send({command:'play',id:'a',gain:1,volume:.6,fade:2,position:3,until:10000});assert.equal(instances[0].currentTime,3);assert.equal(instances[0].paused,false);
+ instances[0].currentTime=13;await send({command:'play',id:'a',gain:1,volume:.6,fade:0,position:3,restart:false,until:10000});assert.equal(instances.length,1);assert.equal(instances[0].currentTime,13,'相同曲目不应使用后台旧位置重置进度');assert.equal(instances[0].paused,false);
  await send({command:'play',id:'b',gain:1,volume:.6,fade:2,position:0,until:10000});assert.equal(instances[1].volume,0);now+=1000;ticks(40);assert.ok(Math.abs(instances[0].volume-.3)<.001);assert.ok(Math.abs(instances[1].volume-.3)<.001);
  await send({command:'pause'});assert.ok(instances.every(a=>a.paused));instances[1].currentTime=5;await send({command:'lease',volume:.5,until:5000});assert.equal(instances[1].paused,false);assert.equal(instances[1].currentTime,5);now=5001;ticks(250);assert.ok(instances.every(a=>a.paused));assert.ok(events.some(e=>e.event==='position'));
 });
