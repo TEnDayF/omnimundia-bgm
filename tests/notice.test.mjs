@@ -5,7 +5,8 @@ test('播放偏好保存提示自动消失，连续操作重置计时，旧计�
  w.chrome={runtime:{sendMessage:async m=>{if(m.type==='saveConfig'){config={...config,...m.patch};return {ok:true,data:config}}return {ok:true,data:{paused:false,enabled:false}};}},storage:{local:{get:async()=>({config})}}};
  w.eval(await readFile(new URL('../extension/options.js',import.meta.url),'utf8'));await wait(()=>w.document.querySelector('[data-action=page]'));
  const click=async selector=>{const el=w.document.querySelector(selector);assert.ok(el,selector);el.click();await wait(()=>!el.disabled);};const message=()=>w.document.getElementById('notice').textContent;
- await click('[data-action=page][data-id=data]');await click('[data-action=page][data-id=playback]');await click('[data-action=savePrefs]');assert.equal(message(),'播放偏好已保存');advance(5000);assert.equal(message(),'','保存成功提示应自动消失');
- await click('[data-action=savePrefs]');advance(2000);await click('[data-action=stop]');assert.equal(message(),'试听已停止');advance(2000);assert.equal(message(),'试听已停止','新提示应有完整展示时间');advance(3000);assert.equal(message(),'');
+ await click('[data-action=page][data-id=data]');await click('[data-action=savePrefs]');assert.equal(message(),'播放偏好已保存');advance(5000);assert.equal(message(),'','保存成功提示应自动消失');
+ await click('[data-action=savePrefs]');advance(2000);await click('[data-action=savePrefs]');assert.equal(message(),'播放偏好已保存');advance(2000);assert.equal(message(),'播放偏好已保存','新提示应有完整展示时间');advance(3000);assert.equal(message(),'');
  const fade=w.document.getElementById('fade');fade.value='99';fade.dispatchEvent(new w.Event('input',{bubbles:true}));await click('[data-action=savePrefs]');assert.match(message(),/过渡应为/);advance(5000);assert.match(message(),/过渡应为/,'错误提示应比成功提示展示更久');advance(3000);assert.equal(message(),'');
 });
+

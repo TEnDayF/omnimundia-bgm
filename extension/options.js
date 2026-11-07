@@ -518,6 +518,7 @@
   var connectionId = "";
   var modelId = "";
   var section = "connection";
+  var moodDrafts = {};
   var drafts = {};
   var connectionDrafts = {};
   var modelDrafts = {};
@@ -539,6 +540,26 @@
     const m = c.models.find((m2) => m2.id === id);
     return m ? modelLabel(m, c.connections.find((p) => p.id === m.connectionId)) : "\u672A\u914D\u7F6E";
   };
+  var previewId = "";
+  function formatTime(n) {
+    return Number.isFinite(n) ? Math.floor(n / 60) + ":" + String(Math.floor(n % 60)).padStart(2, "0") : "--:--";
+  }
+  function updatePreview() {
+    const dock = $("previewDock");
+    if (!dock) return;
+    dock.hidden = !preview;
+    if (!preview) {
+      dock.innerHTML = "";
+      return;
+    }
+    if (!dock.childElementCount) dock.innerHTML = `<strong id=previewName></strong><span id=previewTime></span><input id=previewSeek type=range min=0 step=.1 aria-label=\u8BD5\u542C\u8FDB\u5EA6>${b("\u6682\u505C\u8BD5\u542C", "previewPause", "", "outline")}${b("\u505C\u6B62\u8BD5\u542C", "stop", "", "quiet")}<span class=small>\u8BD5\u542C\u72EC\u7ACB\u4E8E\u6E38\u620F\u914D\u4E50</span>`;
+    $("previewName").textContent = "\u8BD5\u542C \xB7 " + (tracks.find((t) => t.id === previewId)?.name || "\u672C\u5730\u97F3\u4E50");
+    $("previewTime").textContent = formatTime(preview.currentTime) + " / " + formatTime(preview.duration);
+    $("previewSeek").max = String(Number.isFinite(preview.duration) ? preview.duration : 0);
+    $("previewSeek").value = String(preview.currentTime);
+    const pauseButton = dock.querySelector("[data-action=previewPause]");
+    if (pauseButton) pauseButton.textContent = preview.paused ? "\u7EE7\u7EED\u8BD5\u542C" : "\u6682\u505C\u8BD5\u542C";
+  }
   var noticeTimer;
   function notice(text, duration = 4e3) {
     if (noticeTimer !== void 0) clearTimeout(noticeTimer);
@@ -568,6 +589,7 @@
     preview = null;
     if (previewURL) URL.revokeObjectURL(previewURL);
     previewURL = "";
+    updatePreview();
   }
   async function listen(id) {
     stopPreview();
@@ -575,9 +597,14 @@
     if (!record?.blob) throw Error("\u97F3\u9891\u526F\u672C\u4E0D\u5B58\u5728\uFF0C\u8BF7\u91CD\u65B0\u5BFC\u5165");
     previewURL = URL.createObjectURL(record.blob);
     preview = new Audio(previewURL);
+    previewId = id;
+    preview.addEventListener("timeupdate", updatePreview);
+    preview.addEventListener("loadedmetadata", updatePreview);
+    preview.addEventListener("ended", stopPreview);
     preview.volume = (drafts[id]?.gain ?? t.gain) * c.volume;
     try {
       await preview.play();
+      updatePreview();
       notice("\u6B63\u5728\u8BD5\u542C\uFF1A" + t.name + "\uFF1B\u79BB\u5F00\u6B64\u9875\u505C\u6B62");
     } catch {
       stopPreview();
@@ -589,8 +616,9 @@
   }
   function list(mood = "") {
     const data = tracks.filter((t) => page === "trash" ? t.deleted : !t.deleted).filter((t) => !mood || t.moods.includes(mood)).filter((t) => mood || !filter || (filter === "unclassified" ? !t.moods.some((id) => c.moods.some((m) => m.id === id && !m.disabled)) : filter === "missing" ? missingIds.has(t.id) : t.moods.includes(filter))).filter((t) => mood || !search || (t.name + t.moods.map(moodName).join() + t.tags.join()).includes(search));
+    if (!data.length && page === "library" && live().length && (search || filter)) return `<div class="empty"><h2>\u6CA1\u6709\u5339\u914D\u7684\u66F2\u76EE</h2><p>\u5F53\u524D\u641C\u7D22\u6216\u7B5B\u9009\u6CA1\u6709\u7ED3\u679C\uFF0C\u6E05\u7A7A\u540E\u53EF\u67E5\u770B\u5168\u90E8 ${live().length} \u9996\u97F3\u4E50\u3002</p>${b("\u6E05\u7A7A\u641C\u7D22\u4E0E\u7B5B\u9009", "clearLibraryFilters", "", "outline")}${b("\u5BFC\u5165\u97F3\u4E50", "import", "", "quiet")}</div>`;
     if (!data.length) return `<div class="empty"><div class="empty-icon">${icon("music")}</div><h2>${page === "trash" ? "\u56DE\u6536\u7AD9\u4E3A\u7A7A" : live().length ? "\u8FD9\u91CC\u8FD8\u6CA1\u6709\u5339\u914D\u7684\u97F3\u4E50" : "\u628A\u6545\u4E8B\u7684\u58F0\u97F3\u653E\u8FDB\u6765"}</h2><p>${page === "trash" ? "\u79FB\u5165\u8FD9\u91CC\u7684\u66F2\u76EE\u53EF\u4EE5\u6062\u590D\u3002" : "\u5BFC\u5165\u97F3\u9891\uFF0C\u9009\u62E9\u9002\u7528\u60C5\u7EEA\u3002\u6587\u4EF6\u4FDD\u5B58\u5728\u672C\u5730\uFF0C\u4E0D\u4E0A\u4F20\u7ED9\u6A21\u578B\u3002"}</p>${page === "trash" ? "" : b(icon("plus") + "\u5BFC\u5165\u97F3\u4E50", "import", "", "primary")}</div>`;
-    return `<div class="list-heading"><span>\u66F2\u76EE / \u6807\u7B7E</span><span>${data.length} \u9996</span></div><div class="track-list">${data.map((t, i) => `<div class="track-row ${t.id === selected ? "selected" : ""}">${page === "trash" ? `<span class="track-num">${i + 1}</span>` : `<input type="checkbox" data-bulk="${t.id}" aria-label="\u9009\u62E9 ${esc(t.name)}" ${bulk.has(t.id) ? "checked" : ""}>`}${b(`${esc(t.name)}<small>${esc(t.tags.join(" \xB7 ") || "\u672A\u8BBE\u7F6E\u6807\u7B7E")}</small>`, "select", `data-id="${t.id}" title="${esc(t.name)}" aria-pressed="${t.id === selected}"`, "name")}<span class="row-mood">${esc(missingIds.has(t.id) ? "\u97F3\u9891\u7F3A\u5931" : t.moods.map(moodName).join(" / ") || "\u5F85\u5206\u7C7B")}</span>${b(page === "trash" ? icon("restore") : icon("play"), page === "trash" ? "restore" : "listen", `data-id="${t.id}" aria-label="${page === "trash" ? "\u6062\u590D" : "\u8BD5\u542C"} ${esc(t.name)}"`, "icon")}</div>`).join("")}</div>`;
+    return `<div class="list-heading"><span>\u66F2\u76EE / \u6807\u7B7E</span><span>${data.length} \u9996</span></div><div class="track-list">${data.map((t, i) => `<div class="track-row ${t.id === selected ? "selected" : ""}">${page === "trash" || page === "categories" ? `<span class="track-num">${i + 1}</span>` : `<input type="checkbox" data-bulk="${t.id}" aria-label="\u9009\u62E9 ${esc(t.name)}" ${bulk.has(t.id) ? "checked" : ""}>`}${b(`${esc(t.name)}<small>${esc(t.tags.join(" \xB7 ") || "\u672A\u8BBE\u7F6E\u6807\u7B7E")}</small>`, "select", `data-id="${t.id}" title="${esc(t.name)}" aria-pressed="${t.id === selected}"`, "name")}<span class="row-mood">${esc(missingIds.has(t.id) ? "\u97F3\u9891\u7F3A\u5931" : t.moods.map(moodName).join(" / ") || "\u5F85\u5206\u7C7B")}</span>${b(page === "trash" ? icon("restore") : icon("play"), page === "trash" ? "restore" : "listen", `data-id="${t.id}" aria-label="${page === "trash" ? "\u6062\u590D" : "\u8BD5\u542C"} ${esc(t.name)}"`, "icon")}</div>`).join("")}</div>`;
   }
   function checks(label, group, values, chosen) {
     return `<fieldset class="mood-field"><legend class="label">${label}</legend><div class="checks">${values.map((v) => {
@@ -601,12 +629,13 @@
   function editor() {
     const t = draft();
     if (!t) return '<aside class="inspector"><p>\u9009\u62E9\u4E00\u9996\u97F3\u4E50\uFF0C\u67E5\u770B\u9002\u7528\u573A\u666F\u4E0E\u6807\u7B7E\u3002</p></aside>';
-    return `<aside class="inspector"><div class="row between"></div><h2 class="edit-name">${esc(t.name)}</h2><p class="small">${(t.size / 1048576).toFixed(1)} MB \xB7 \u4FEE\u6539\u540E\u4FDD\u5B58\u5230\u672C\u5730</p><div class="stack">${b(icon("play") + "\u8BD5\u542C\u8FD9\u9996\u97F3\u4E50", "listen", `data-id="${t.id}"`, "outline")}${field("\u66F2\u76EE\u540D\u79F0", "trackName", t.name, "text", 'data-track="name"')}${checks("\u9002\u7528\u60C5\u7EEA \xB7 \u53EF\u591A\u9009", "moods", c.moods.map((m) => [m.id, m.name]), t.moods)}${checks("\u9002\u7528\u6807\u7B7E", "tags", c.tags, t.tags)}<details><summary>\u6392\u9664\u60C5\u5883 \xB7 ${t.exclude.length} \u9879</summary>${checks("\u6392\u9664\u4F18\u5148\u4E8E\u9002\u7528\u6807\u7B7E", "exclude", c.tags, t.exclude)}</details>${area("\u66F2\u76EE\u5907\u6CE8 \xB7 \u4EC5\u672C\u5730\u4FDD\u5B58", "description", t.description, 'data-track="description"')}${select("\u97F3\u4E50\u5F3A\u5EA6", "intensity", [[-1, "\u4E0D\u9650\u5F3A\u5EA6"], [0, "\u5E73\u9759"], [1, "\u8F7B\u5FAE\u8D77\u4F0F"], [2, "\u660E\u663E\u7D27\u5F20 / \u6FC0\u52A8"], [3, "\u6FC0\u70C8 / \u9AD8\u6F6E"]], t.intensity, 'data-track="intensity"')}${field("\u5355\u66F2\u97F3\u91CF", "gain", t.gain, "range", 'min="0" max="1" step=".01" data-track="gain"')}<div class="editor-bottom"><p id="dirty" class="small">${drafts[t.id] && JSON.stringify(t) !== JSON.stringify(track()) ? "\u6709\u672A\u4FDD\u5B58\u7684\u4FEE\u6539" : "\u5DF2\u4FDD\u5B58\u5230\u672C\u5730"}</p><div class="row">${b("\u4FDD\u5B58\u4FEE\u6539", "saveTrack", "", "primary")}${b("\u8FD8\u539F", "resetTrack", "", "outline")}</div>${b("\u79FB\u5165\u56DE\u6536\u7AD9", "remove", "", "danger")}</div></div></aside>`;
+    return `<aside class="inspector"><div class="row between"></div><h2 class="edit-name">\u66F2\u76EE\u8BE6\u60C5</h2><p class="small">${(t.size / 1048576).toFixed(1)} MB \xB7 \u4FEE\u6539\u540E\u4FDD\u5B58\u5230\u672C\u5730</p><div class="stack">${b(icon("play") + "\u8BD5\u542C\u8FD9\u9996\u97F3\u4E50", "listen", `data-id="${t.id}"`, "outline")}${field("\u66F2\u76EE\u540D\u79F0", "trackName", t.name, "text", 'data-track="name"')}${checks("\u9002\u7528\u60C5\u7EEA \xB7 \u53EF\u591A\u9009", "moods", c.moods.map((m) => [m.id, m.name]), t.moods)}<div class="track-tags"><div class="section-heading"><h3>\u9002\u7528\u6807\u7B7E</h3><span class="small">\u5728\u60C5\u7EEA\u573A\u666F\u4E2D\u7BA1\u7406\u6807\u7B7E</span></div>${checks("\u9009\u62E9\u6807\u7B7E \xB7 \u53EF\u591A\u9009", "tags", c.tags, t.tags)}</div><details><summary>\u6392\u9664\u60C5\u5883 \xB7 ${t.exclude.length} \u9879</summary>${checks("\u6392\u9664\u4F18\u5148\u4E8E\u9002\u7528\u6807\u7B7E", "exclude", c.tags, t.exclude)}</details>${area("\u66F2\u76EE\u5907\u6CE8 \xB7 \u4EC5\u672C\u5730\u4FDD\u5B58", "description", t.description, 'data-track="description"')}${select("\u97F3\u4E50\u5F3A\u5EA6", "intensity", [[-1, "\u4E0D\u9650\u5F3A\u5EA6"], [0, "\u5E73\u9759"], [1, "\u8F7B\u5FAE\u8D77\u4F0F"], [2, "\u660E\u663E\u7D27\u5F20 / \u6FC0\u52A8"], [3, "\u6FC0\u70C8 / \u9AD8\u6F6E"]], t.intensity, 'data-track="intensity"')}${field("\u5355\u66F2\u97F3\u91CF", "gain", t.gain, "range", 'min="0" max="1" step=".01" data-track="gain"')}<div class="editor-bottom"><p id="dirty" class="small">${drafts[t.id] && JSON.stringify(t) !== JSON.stringify(track()) ? "\u6709\u672A\u4FDD\u5B58\u7684\u4FEE\u6539" : "\u5DF2\u4FDD\u5B58\u5230\u672C\u5730"}</p><div class="row">${b("\u4FDD\u5B58\u4FEE\u6539", "saveTrack", "", "primary")}${b("\u8FD8\u539F", "resetTrack", "", "outline")}</div>${b("\u79FB\u5165\u56DE\u6536\u7AD9", "remove", "", "danger")}</div></div></aside>`;
   }
   function scenes() {
-    const m = c.moods.find((m2) => m2.id === scene) || c.moods[0];
-    scene = m.id;
-    return `<section class="combo-scenes"><div class="main-head row between"><div><h1>\u60C5\u7EEA\u573A\u666F</h1><p>${c.moods.length} \u4E2A\u60C5\u7EEA\u573A\u666F \xB7 \u4E00\u9996\u97F3\u4E50\u53EF\u4EE5\u5C5E\u4E8E\u591A\u4E2A\u573A\u666F</p></div>${b(icon("plus") + "\u65B0\u5EFA\u573A\u666F", "newMood", "", "outline")}</div><div class="scene-layout"><aside><div class="scene-tiles">${c.moods.map((m2) => `<button class="scene-tile ${scene === m2.id ? "selected" : ""}" data-action="scene" data-id="${m2.id}" aria-pressed="${scene === m2.id}"><strong>${esc(m2.name)}${m2.disabled ? " \xB7 \u5DF2\u505C\u7528" : ""}</strong><small>${live().filter((t) => t.moods.includes(m2.id)).length} \u9996\u5173\u8054</small></button>`).join("")}</div><div class="rule"><h3>\u5171\u7528\u540C\u4E00\u4EFD\u66F2\u5E93</h3><p>\u66F2\u76EE\u4FEE\u6539\u540C\u6B65\u56DE\u97F3\u4E50\u5E93\u3002\u79FB\u51FA\u573A\u666F\u4E0D\u4F1A\u5220\u9664\u97F3\u9891\u3002</p>${b("\u7BA1\u7406\u6807\u7B7E\u8BCD\u8868", "editTags", "", "outline")}</div></aside><section><div class="scene-summary"><div class="row between">${b("\u7F16\u8F91\u8BF4\u660E", "editMood", "", "outline")}${b("\u5408\u5E76\uFF0F\u505C\u7528", "manageMood", "", "outline")}</div><h2>${esc(m.name)}</h2><p>${esc(m.description)}</p></div><div class="scene-heading"><h3>\u9002\u7528\u66F2\u76EE</h3><div class="row">${b("\u4ECE\u66F2\u5E93\u6DFB\u52A0", "assign", "", "primary")}${b("\u5BFC\u5165", "import", "", "outline")}</div></div>${list(scene)}<div class="rule"><h3>\u672C\u5730\u5339\u914D</h3><p>\u5148\u7B5B\u9009\u60C5\u7EEA\u4E0E\u6392\u9664\u6807\u7B7E\uFF0C\u518D\u6BD4\u8F83\u9002\u7528\u6807\u7B7E\u3001\u5F3A\u5EA6\u548C\u8FD1\u671F\u64AD\u653E\u8BB0\u5F55\u3002\u5F53\u524D\u97F3\u4E50\u4ECD\u9002\u5408\u65F6\u4FDD\u6301\u64AD\u653E\u3002</p></div></section></div></section>`;
+    const saved = c.moods.find((m2) => m2.id === scene) || c.moods[0];
+    scene = saved.id;
+    const m = { ...saved, ...moodDrafts[scene] };
+    return `<section><div class="main-head"><div><h1>\u60C5\u7EEA\u573A\u666F</h1><p>\u5B9A\u4E49\u5267\u60C5\u6C1B\u56F4\uFF0C\u5173\u8054\u9002\u5408\u7684\u97F3\u4E50\u3002</p></div><div class="row">${b("\u81EA\u5B9A\u4E49\u6807\u7B7E", "editTags", "", "outline")}${b(icon("plus") + "\u65B0\u5EFA\u60C5\u7EEA\u5206\u7C7B", "newMood", "", "primary")}</div></div><div class="mood-work"><aside class="surface mood-index"><h2>\u60C5\u7EEA\u5206\u7C7B</h2><div class="scene-tiles">${c.moods.map((m2) => `<button class="scene-tile ${scene === m2.id ? "selected" : ""}" data-action="scene" data-id="${m2.id}" aria-pressed="${scene === m2.id}"><span class="scene-symbol">${icon(m2.id === "battle" ? "next" : m2.id === "relax" ? "music" : "model")}</span><span><strong>${esc(m2.name)}${m2.disabled ? " \xB7 \u5DF2\u505C\u7528" : ""}</strong><small>${esc(m2.description)}</small></span><span class="scene-count">${live().filter((t) => t.moods.includes(m2.id)).length} \u9996 ${icon("chevron")}</span></button>`).join("")}</div><p class="small">\u540C\u4E00\u9996\u97F3\u4E50\u53EF\u5173\u8054\u591A\u4E2A\u60C5\u7EEA\u3002</p><div class="rule"><h3>\u81EA\u5B9A\u4E49\u6807\u7B7E</h3><p class="small">${esc(c.tags.join(" \xB7 "))}</p></div></aside><section class="surface mood-editor"><div class="section-heading"><h2>\u7F16\u8F91\u60C5\u7EEA</h2>${b("\u5408\u5E76\uFF0F\u505C\u7528", "manageMood", "", "quiet")}</div><div class="stack">${field("\u540D\u79F0", "moodName", m.name)}${area("\u63CF\u8FF0", "moodDesc", m.description)}<p class="small">\u7528\u4E8E\u5E2E\u52A9\u6A21\u578B\u7406\u89E3\u8FD9\u4E00\u7C7B\u6C1B\u56F4\uFF1B\u4FEE\u6539\u540E\u4ECE\u540E\u7EED\u56DE\u5408\u751F\u6548\u3002</p><p id="moodDirty" class="small" role="status">${moodDrafts[scene] && (m.name !== saved.name || m.description !== saved.description) ? "\u6709\u672A\u4FDD\u5B58\u7684\u4FEE\u6539" : "\u5DF2\u4FDD\u5B58\u5230\u672C\u5730"}</p><div class="row">${b("\u4FDD\u5B58\u4FEE\u6539", "saveMood", `data-id="${m.id}"`, "primary")}${b("\u8FD8\u539F", "resetMood", `data-id="${m.id}"`, "outline")}</div></div><div class="scene-heading"><h2>\u5173\u8054\u66F2\u76EE</h2>${b("\u8C03\u6574\u5173\u8054", "assign", "", "outline")}</div>${list(scene)}<p class="small rule">\u4ECE\u66F2\u5E93\u5173\u8054\u97F3\u4E50\uFF0C\u4E0D\u590D\u5236\u97F3\u9891\u3002\u66F2\u76EE\u6807\u7B7E\u4E0E\u5F3A\u5EA6\u5728\u97F3\u4E50\u5E93\u4E2D\u7BA1\u7406\u3002</p></section></div></section>`;
   }
   function connectionForm() {
     const p = cp();
@@ -615,46 +644,51 @@
   function modelForm() {
     const m = mp(), p = c.connections.find((x) => x.id === m?.connectionId);
     if (!m || !p) return "<p>\u8BF7\u5148\u6DFB\u52A0\u670D\u52A1\u3002</p>";
-    return `<div class="stack"><p class="small">${newEntity ? "\u65B0\u6A21\u578B\u4EC5\u5728\u4FDD\u5B58\u540E\u521B\u5EFA\u3002" : "\u4FEE\u6539\u5F53\u524D\u6A21\u578B\uFF0C\u4E0D\u81EA\u52A8\u5207\u6362\u5F53\u524D\u5224\u65AD\u6A21\u578B\u3002"}</p>${newEntity ? select("\u670D\u52A1\u6765\u6E90", "modelService", c.connections.filter((p2) => !p2.disabled).map((p2) => [p2.id, p2.name]), m.connectionId) : `<p>\u670D\u52A1\u6765\u6E90\uFF1A${esc(p.name)}</p>`}<div class="row between"><span class="type-label">${modelKind(p)}</span>${b("\u83B7\u53D6\u6A21\u578B\u5217\u8868", "fetchModels", "", "outline")}</div><div id="modelResults"></div>${field("\u5B9E\u9645\u6A21\u578B ID", "modelId", m.model, "text", 'data-model="model" placeholder="\u9009\u62E9\u5217\u8868\u4E2D\u7684\u6A21\u578B\uFF0C\u6216\u624B\u52A8\u586B\u5199"')}<p class="small">\u8BF7\u6C42\u4F7F\u7528\u6B64 ID\u3002\u83B7\u53D6\u5217\u8868\u53EA\u8BF7\u6C42\u670D\u52A1\u76EE\u5F55\uFF0C\u4E0D\u53D1\u9001\u5267\u60C5\u3002</p>${field("\u663E\u793A\u540D\u79F0", "modelName", m.name, "text", 'data-model="name" placeholder="\u7528\u4E8E\u4F60\u81EA\u5DF1\u7684\u6A21\u578B\u5217\u8868"')}${field("\u6A21\u578B\u5BB6\u65CF\uFF08\u53EF\u4FEE\u6539\uFF09", "modelFamily", m.family ?? familyHint(m.model), "text", 'data-model="family" placeholder="\u65E0\u6CD5\u8BC6\u522B\u65F6\u53EF\u7559\u7A7A"')}${b("\u6839\u636E\u6A21\u578B ID \u5EFA\u8BAE\u540D\u79F0\u4E0E\u5BB6\u65CF", "suggestModel", "", "outline")}<p class="small">\u8BC6\u522B\u7ED3\u679C\u4EC5\u4F5C\u547D\u540D\u5EFA\u8BAE\uFF0C\u4E0D\u9A8C\u8BC1\u670D\u52A1\u5546\u8EAB\u4EFD\u548C\u6A21\u578B\u80FD\u529B\u3002</p><details><summary>\u80FD\u529B\u4E0E\u9AD8\u7EA7\u53C2\u6570</summary><div class="stack">${select("\u7ED3\u6784\u5316\u8F93\u51FA", "output", p.protocol === "systemone" ? [["typed", "\u7C7B\u578B\u5316\u51B3\u7B56"]] : [["json_object", "JSON \u5BF9\u8C61"], ["json_schema", "JSON Schema\uFF08\u9700\u670D\u52A1\u652F\u6301\uFF09"], ["prompt", "\u63D0\u793A\u8BCD\u7EA6\u675F"]], m.output, 'data-model="output"')}<label class="checkline"><input id="stream" type="checkbox" ${m.stream ? "checked" : ""} ${p.protocol === "systemone" ? "disabled" : ""} data-model="stream"> SSE \u6D41\u5F0F\u63A5\u6536</label>${select("\u8F93\u51FA\u4E0A\u9650\u5B57\u6BB5", "tokenField", ["max_tokens", "max_completion_tokens", "none"], m.tokenField, 'data-model="tokenField"')}${area("\u9644\u52A0\u8BF7\u6C42\u4F53\uFF08JSON\uFF09", "extra", rawExtra[m.id] ?? JSON.stringify(m.extra, null, 2))}</div></details><div class="editor-actions">${b(newEntity ? "\u4FDD\u5B58\u6A21\u578B" : "\u4FDD\u5B58\u4FEE\u6539", "saveModel", "", "primary")}${b("\u53D6\u6D88", "close", "", "outline")}${!newEntity ? b(m.disabled ? "\u542F\u7528\u6A21\u578B" : "\u505C\u7528\u6A21\u578B", "toggleModel", "", "outline") : ""}</div>${!newEntity ? `<div class="rule"><h3>\u6D4B\u8BD5\u5DF2\u4FDD\u5B58\u914D\u7F6E</h3><p>\u53D1\u9001\u77ED\u6837\u4F8B\uFF0C\u4EA7\u751F 1 \u6B21\u8BF7\u6C42\uFF1B\u4E0D\u53D1\u9001\u771F\u5B9E\u5267\u60C5\u3002\u672A\u4FDD\u5B58\u4FEE\u6539\u4E0D\u53C2\u4E0E\u6D4B\u8BD5\u3002</p>${b("\u6D4B\u8BD5\u4E00\u6B21\u5206\u7C7B \xB7 1 \u6B21\u8BF7\u6C42", "test", "", "outline")}<p id="modelTestResult" role="status">${esc(testResults[m.id] || "\u672C\u6B21\u4F1A\u8BDD\u5C1A\u672A\u6D4B\u8BD5")}</p></div>` : ""}</div>`;
+    return `<div class="stack model-form">${newEntity ? select("\u670D\u52A1\u6765\u6E90", "modelService", c.connections.filter((p2) => !p2.disabled).map((p2) => [p2.id, p2.name]), m.connectionId) : ""}${field("\u663E\u793A\u540D\u79F0", "modelName", m.name, "text", 'data-model="name" placeholder="\u7ED9\u8FD9\u4E2A\u6A21\u578B\u8D77\u4E2A\u4FBF\u4E8E\u8BC6\u522B\u7684\u540D\u5B57"')}<div class="model-id-row">${field("\u5B9E\u9645\u6A21\u578B ID", "modelId", m.model, "text", 'data-model="model" placeholder="\u9009\u62E9\u5217\u8868\u4E2D\u7684\u6A21\u578B\uFF0C\u6216\u624B\u52A8\u586B\u5199"')}${b("\u83B7\u53D6\u6A21\u578B\u5217\u8868", "fetchModels", "", "outline")}</div><div id="modelResults"></div><p class="small">${modelKind(p)} \xB7 \u8BF7\u6C42\u4F7F\u7528\u6A21\u578B ID\uFF0C\u83B7\u53D6\u5217\u8868\u4E0D\u53D1\u9001\u5267\u60C5\u3002</p><details><summary>\u547D\u540D\u5EFA\u8BAE\u4E0E\u9AD8\u7EA7\u53C2\u6570</summary><div class="stack">${field("\u6A21\u578B\u5BB6\u65CF\uFF08\u53EF\u4FEE\u6539\uFF09", "modelFamily", m.family ?? familyHint(m.model), "text", 'data-model="family"')}${b("\u6839\u636E\u6A21\u578B ID \u5EFA\u8BAE\u540D\u79F0\u4E0E\u5BB6\u65CF", "suggestModel", "", "outline")}<p class="small">\u547D\u540D\u5EFA\u8BAE\u4E0D\u9A8C\u8BC1\u670D\u52A1\u5546\u8EAB\u4EFD\u548C\u6A21\u578B\u80FD\u529B\u3002</p>${select("\u7ED3\u6784\u5316\u8F93\u51FA", "output", p.protocol === "systemone" ? [["typed", "\u7C7B\u578B\u5316\u51B3\u7B56"]] : [["json_object", "JSON \u5BF9\u8C61"], ["json_schema", "JSON Schema\uFF08\u9700\u670D\u52A1\u652F\u6301\uFF09"], ["prompt", "\u63D0\u793A\u8BCD\u7EA6\u675F"]], m.output, 'data-model="output"')}<label class="checkline"><input id="stream" type="checkbox" ${m.stream ? "checked" : ""} ${p.protocol === "systemone" ? "disabled" : ""} data-model="stream">SSE \u6D41\u5F0F\u63A5\u6536</label>${select("\u8F93\u51FA\u4E0A\u9650\u5B57\u6BB5", "tokenField", ["max_tokens", "max_completion_tokens", "none"], m.tokenField, 'data-model="tokenField"')}${area("\u9644\u52A0\u8BF7\u6C42\u4F53\uFF08JSON\uFF09", "extra", rawExtra[m.id] ?? JSON.stringify(m.extra, null, 2))}</div></details><div class="editor-actions">${b(newEntity ? "\u4FDD\u5B58\u6A21\u578B" : "\u4FDD\u5B58\u4FEE\u6539", "saveModel", "", "primary")}${b(newEntity ? "\u53D6\u6D88" : "\u8FD8\u539F\u4FEE\u6539", newEntity ? "close" : "resetModel", "", "outline")}${!newEntity ? b(m.disabled ? "\u542F\u7528\u6A21\u578B" : "\u505C\u7528\u6A21\u578B", "toggleModel", "", "quiet") + b("\u5220\u9664\u6A21\u578B", "deleteModel", `data-id="${m.id}"`, "danger") : ""}</div>${!newEntity ? `<div class="rule model-test"><div class="row between"><h3>\u6D4B\u8BD5\u5DF2\u4FDD\u5B58\u914D\u7F6E</h3>${b("\u6D4B\u8BD5\u5206\u7C7B \xB7 1 \u6B21\u8BF7\u6C42", "test", "", "outline")}</div><p class="small">\u53D1\u9001\u77ED\u6837\u4F8B\uFF0C\u4E0D\u53D1\u9001\u771F\u5B9E\u5267\u60C5\uFF1B\u672A\u4FDD\u5B58\u4FEE\u6539\u4E0D\u53C2\u4E0E\u6D4B\u8BD5\u3002</p><p id="modelTestResult" class="small" role="status">${esc(testResults[m.id] || "\u672C\u6B21\u4F1A\u8BDD\u5C1A\u672A\u6D4B\u8BD5")}</p></div>` : ""}</div>`;
   }
   function currentModel() {
-    return `<section class="current-model" aria-label="\u5F53\u524D\u5224\u65AD\u6A21\u578B"><div><h2>\u5F53\u524D\u5224\u65AD\u6A21\u578B</h2><p>AI \u53EA\u5224\u65AD\u5267\u60C5\u7684\u60C5\u7EEA\u4E0E\u6C1B\u56F4\u3002\u9009\u66F2\u7531\u672C\u5730\u89C4\u5219\u5B8C\u6210\u3002</p><p class="small">\u6BCF\u56DE\u5408\u53EA\u8BF7\u6C42\u4E00\u4E2A\u540E\u7AEF\uFF0C\u5931\u8D25\u540E\u4E0D\u81EA\u52A8\u6362\u670D\u52A1\u3002</p></div><div class="model-choice">${select("\u4F7F\u7528\u6A21\u578B", "sceneModel", [["", "\u8BF7\u9009\u62E9\u5DF2\u914D\u7F6E\u6A21\u578B"], ...c.models.filter((m) => !m.disabled && !c.connections.find((p) => p.id === m.connectionId)?.disabled && !!m.model).map((m) => [m.id, modelName(m.id) + " \xB7 " + modelKind(c.connections.find((p) => p.id === m.connectionId))])], taskDraft.scene)}<details><summary>\u8BF7\u6C42\u7528\u91CF\u9650\u5236</summary><div class="form-grid">${field("\u6700\u5927\u8F93\u51FA token", "maxOutput", taskDraft.maxOutput, "number", 'min="64" max="1024"')}${field("\u5267\u60C5\u5B57\u7B26\u4E0A\u9650", "maxChars", taskDraft.maxChars, "number", 'min="2000" max="60000"')}</div><p class="small">\u53EA\u53D1\u9001\u5FC5\u8981\u5267\u60C5\u548C\u7C7B\u522B\u3002\u66F2\u5E93\u4E0D\u4E0A\u4F20\uFF0C\u7F13\u5B58\u547D\u4E2D\u4E0D\u8BF7\u6C42\u3002</p></details><div class="row">${b("\u4FDD\u5B58\u5224\u65AD\u8BBE\u7F6E", "saveTasks", "", "primary")}<span class="small">\u4E0B\u4E00\u6B21\u65B0\u56DE\u5408\u751F\u6548\uFF0C\u4FDD\u5B58\u4E0D\u53D1\u8BF7\u6C42\u3002</span></div></div></section>`;
+    return `<section class="surface current-model"><div><h2>\u5F53\u524D\u5224\u65AD\u6A21\u578B</h2><p>\u6BCF\u56DE\u5408\u53EA\u4F7F\u7528\u4E00\u4E2A\u6A21\u578B\uFF0C\u5931\u8D25\u4E0D\u81EA\u52A8\u5207\u6362\u670D\u52A1\u3002</p></div><div class="model-choice">${select("\u4F7F\u7528\u6A21\u578B", "sceneModel", [["", "\u8BF7\u9009\u62E9\u5DF2\u914D\u7F6E\u6A21\u578B"], ...c.models.filter((m) => !m.disabled && !c.connections.find((p) => p.id === m.connectionId)?.disabled && !!m.model).map((m) => [m.id, modelName(m.id)])], taskDraft.scene)}<div class="row">${b("\u4FDD\u5B58\u5224\u65AD\u8BBE\u7F6E", "saveTasks", "", "primary")}<span class="small">\u4FDD\u5B58\u4E0D\u53D1\u9001\u8BF7\u6C42\uFF0C\u4E0B\u4E00\u6B21\u65B0\u56DE\u5408\u751F\u6548\u3002</span></div></div><details class="request-limits"><summary>\u8BF7\u6C42\u7528\u91CF\u9650\u5236</summary><div class="form-grid">${field("\u6700\u5927\u8F93\u51FA token", "maxOutput", taskDraft.maxOutput, "number", 'min="64" max="1024"')}${field("\u5267\u60C5\u5B57\u7B26\u4E0A\u9650", "maxChars", taskDraft.maxChars, "number", 'min="2000" max="60000"')}</div><p class="small">\u66F2\u5E93\u4E0D\u4E0A\u4F20\uFF1B\u7F13\u5B58\u547D\u4E2D\u4E0D\u8BF7\u6C42\u6A21\u578B\u3002</p></details></section>`;
   }
   function cachePage() {
-    return `<section class="settings-shell"><div class="main-head"><div><h1>\u5267\u60C5\u7F13\u5B58</h1><p>\u6309\u6E38\u620F\u4E0E\u4E16\u754C\u7EBF\u7BA1\u7406\u5224\u65AD\u8BB0\u5F55\u3002\u6E05\u7406\u4E0D\u4F1A\u6E05\u7A7A\u66F2\u5E93\u6216\u91CD\u7F6E\u7528\u91CF\u3002</p></div></div><section class="cache-panel"><h2>\u56DE\u5408\u5224\u65AD\u7F13\u5B58</h2><p id="cacheInfo" class="small" role="status">\u6B63\u5728\u8BFB\u53D6\u7F13\u5B58\u6570\u91CF\u2026</p><p class="small">\u6E05\u9664\u60C5\u7EEA\u5224\u65AD\u7ED3\u679C\u4E0E\u4E0A\u4E00\u56DE\u5408\u6458\u8981\uFF0C\u4E0D\u52A8\u97F3\u4E50\u3001\u5206\u7C7B\u3001\u63A5\u53E3\u914D\u7F6E\u548C\u7528\u91CF\u7EDF\u8BA1\u3002\u5F53\u524D\u97F3\u4E50\u4FDD\u6301\uFF0C\u5F53\u524D\u56DE\u5408\u4E0D\u4F1A\u81EA\u52A8\u91CD\u65B0\u8BF7\u6C42\u3002</p><select id="cacheScope" aria-label="\u7F13\u5B58\u8303\u56F4"><option value="all">\u5168\u90E8\u6E38\u620F\u4E0E\u4E16\u754C\u7EBF</option></select><div class="row">${b("\u6E05\u9664\u5DF2\u6709\u56DE\u5408\u7F13\u5B58", "clearCache", "", "outline")}${b("\u6062\u590D\u5DF2\u6E05\u9664\u7F13\u5B58", "restoreCache", "", "outline")}</div><p class="small">\u6E05\u9664\u5185\u5BB9\u4FDD\u7559\u5728\u672C\u5730\u7F13\u5B58\u56DE\u6536\u533A\uFF0C\u53EF\u6062\u590D\uFF1B\u5907\u4EFD\u4FDD\u7559\u671F\u95F4\u4E0D\u91CA\u653E\u8FD9\u90E8\u5206\u78C1\u76D8\u7A7A\u95F4\u3002</p><details><summary>\u53EF\u6062\u590D\u7684\u7F13\u5B58\u4FDD\u7559\u7B56\u7565</summary><div class="form-grid">${field("\u6700\u591A\u4FDD\u7559\u56DE\u5408\u6570\uFF080 \u4E0D\u9650\u5236\uFF09", "cacheMax", c.cachePolicy?.maxRounds || 0, "number", 'min="0" max="100000"')}${field("\u4FDD\u7559\u5929\u6570\uFF080 \u4E0D\u9650\u5236\uFF09", "cacheDays", c.cachePolicy?.days || 0, "number", 'min="0" max="3650"')}</div><p class="small">\u542F\u7528\u540E\u5728\u65B0\u5224\u65AD\u5B8C\u6210\u65F6\u6574\u7406\uFF0C\u6DD8\u6C70\u8BB0\u5F55\u4ECD\u8FDB\u5165\u56DE\u6536\u533A\uFF1B\u4E0D\u6C38\u4E45\u5220\u9664\u3002</p>${b("\u4FDD\u5B58\u7B56\u7565", "saveCachePolicy", "", "outline")}${b("\u73B0\u5728\u6309\u7B56\u7565\u6574\u7406", "pruneCache", "", "outline")}</details></section></section>`;
+    return `<section class="rule cache-panel"><h2>\u5267\u60C5\u7F13\u5B58</h2><p id="cacheInfo" class="small" role="status">\u6B63\u5728\u8BFB\u53D6\u7F13\u5B58\u6570\u91CF\u2026</p><p class="small">\u6E05\u9664\u60C5\u7EEA\u5224\u65AD\u7ED3\u679C\u4E0E\u4E0A\u4E00\u56DE\u5408\u6458\u8981\uFF0C\u4E0D\u52A8\u97F3\u4E50\u3001\u5206\u7C7B\u3001\u63A5\u53E3\u914D\u7F6E\u548C\u7528\u91CF\u7EDF\u8BA1\u3002\u5F53\u524D\u97F3\u4E50\u4FDD\u6301\uFF0C\u5F53\u524D\u56DE\u5408\u4E0D\u4F1A\u81EA\u52A8\u91CD\u65B0\u8BF7\u6C42\u3002</p><select id="cacheScope" aria-label="\u7F13\u5B58\u8303\u56F4"><option value="all">\u5168\u90E8\u6E38\u620F\u4E0E\u4E16\u754C\u7EBF</option></select><div class="row">${b("\u6E05\u9664\u5DF2\u6709\u56DE\u5408\u7F13\u5B58", "clearCache", "", "outline")}${b("\u6062\u590D\u5DF2\u6E05\u9664\u7F13\u5B58", "restoreCache", "", "outline")}</div><p class="small">\u6E05\u9664\u5185\u5BB9\u4FDD\u7559\u5728\u672C\u5730\u7F13\u5B58\u56DE\u6536\u533A\uFF0C\u53EF\u6062\u590D\uFF1B\u5907\u4EFD\u4FDD\u7559\u671F\u95F4\u4E0D\u91CA\u653E\u8FD9\u90E8\u5206\u78C1\u76D8\u7A7A\u95F4\u3002</p><details><summary>\u53EF\u6062\u590D\u7684\u7F13\u5B58\u4FDD\u7559\u7B56\u7565</summary><div class="form-grid">${field("\u6700\u591A\u4FDD\u7559\u56DE\u5408\u6570\uFF080 \u4E0D\u9650\u5236\uFF09", "cacheMax", c.cachePolicy?.maxRounds || 0, "number", 'min="0" max="100000"')}${field("\u4FDD\u7559\u5929\u6570\uFF080 \u4E0D\u9650\u5236\uFF09", "cacheDays", c.cachePolicy?.days || 0, "number", 'min="0" max="3650"')}</div><p class="small">\u542F\u7528\u540E\u5728\u65B0\u5224\u65AD\u5B8C\u6210\u65F6\u6574\u7406\uFF0C\u6DD8\u6C70\u8BB0\u5F55\u4ECD\u8FDB\u5165\u56DE\u6536\u533A\uFF1B\u4E0D\u6C38\u4E45\u5220\u9664\u3002</p>${b("\u4FDD\u5B58\u7B56\u7565", "saveCachePolicy", "", "outline")}${b("\u73B0\u5728\u6309\u7B56\u7565\u6574\u7406", "pruneCache", "", "outline")}</details></section>`;
   }
   function settings() {
-    const rows = c.models.filter((m) => {
+    const rows = c.models.filter((m) => !m.deleted).filter((m) => {
       const p = c.connections.find((x) => x.id === m.connectionId);
-      return (!aiSearch || `${m.name} ${m.model} ${p?.name} ${m.family || familyHint(m.model)}`.toLowerCase().includes(aiSearch.toLowerCase())) && (!aiFilter || (aiFilter === "disabled" ? m.disabled || p?.disabled : !m.disabled && !p?.disabled && (aiFilter === "decision" ? p?.protocol === "systemone" : p?.protocol === "chat")));
+      return (!aiSearch || `${m.name} ${m.model} ${p?.name}`.toLowerCase().includes(aiSearch.toLowerCase())) && (!aiFilter || (aiFilter === "disabled" ? m.disabled || p?.disabled : !m.disabled && !p?.disabled && (aiFilter === "decision" ? p?.protocol === "systemone" : p?.protocol === "chat")));
     });
-    return `<section class="settings-shell"><div class="main-head"><div><h1>AI \u8BBE\u7F6E</h1><p>\u9009\u62E9\u4E00\u4E2A\u6A21\u578B\uFF0C\u8BA9\u5B83\u7406\u89E3\u5F53\u524D\u6545\u4E8B\u7684\u6C1B\u56F4\u3002</p></div><div class="row">${b("\u7BA1\u7406\u670D\u52A1", "page", 'data-id="services"', "outline")}${c.connections.some((p) => !p.disabled) ? b(icon("plus") + "\u6DFB\u52A0\u6A21\u578B", "newModel", "", "primary") : b(icon("plus") + "\u6DFB\u52A0\u670D\u52A1", "newConnection", "", "primary")}</div></div>${currentModel()}<div class="section-heading"><h2>\u5DF2\u914D\u7F6E\u6A21\u578B</h2><span class="small">${rows.length} \u4E2A \xB7 \u6A21\u578B\u540D\u79F0\u4E0E\u670D\u52A1\u6765\u6E90\u5206\u522B\u8BB0\u5F55</span></div><div class="toolbar">${field("\u641C\u7D22\u6A21\u578B\u6216\u670D\u52A1", "aiSearch", aiSearch, "search", 'placeholder="\u540D\u79F0\u3001\u6A21\u578B ID \u6216\u5BB6\u65CF"')}${select("\u6A21\u578B\u7C7B\u578B", "aiFilter", [["", "\u5168\u90E8\u6A21\u578B"], ["text", "\u6587\u672C\u751F\u6210"], ["decision", "\u7ED3\u6784\u5316\u51B3\u7B56"], ["disabled", "\u5DF2\u505C\u7528"]], aiFilter)}</div><div class="model-grid">${rows.map((m) => {
-      const p = c.connections.find((x) => x.id === m.connectionId), family = m.family ?? familyHint(m.model), used = c.tasks.scene === m.id;
-      return `<article class="model-card"><div class="model-identity"><div class="row"><span class="type-label">${modelKind(p)}</span><span class="model-state">${m.disabled || p?.disabled ? "\u5DF2\u505C\u7528" : used ? "\u5F53\u524D\u5224\u65AD\u6A21\u578B" : "\u5907\u7528\u914D\u7F6E"}</span></div><h3>${esc((m.name === p?.name ? m.model : m.name) || m.model || m.name || "\u672A\u547D\u540D\u6A21\u578B")}</h3><code>${esc(m.model || "\u5C1A\u672A\u586B\u5199\u6A21\u578B ID")}</code></div><dl><div><dt>\u670D\u52A1</dt><dd>${esc(p?.name || "\u4E0D\u5B58\u5728")} \xB7 ${deployment(p?.base || "")}</dd></div><div><dt>\u5BB6\u65CF</dt><dd>${esc(family || "\u672A\u8BC6\u522B")}</dd></div></dl><div class="model-operations"><p class="small">${esc(testResults[m.id] || "\u672C\u6B21\u4F1A\u8BDD\u672A\u6D4B\u8BD5")}</p>${b("\u7F16\u8F91\u6A21\u578B", "editModel", `data-id="${m.id}"`, "outline")}</div></article>`;
-    }).join("") || `<div class="empty"><h2>${c.models.length ? "\u6CA1\u6709\u7B26\u5408\u6761\u4EF6\u7684\u6A21\u578B" : "\u5148\u8FDE\u63A5\u4F60\u7684 AI \u670D\u52A1"}</h2><p>${c.models.length ? "\u8BD5\u8BD5\u5176\u4ED6\u5173\u952E\u8BCD\uFF0C\u6216\u6E05\u9664\u6A21\u578B\u7C7B\u578B\u7B5B\u9009\u3002" : "\u5728\u7EBF API\u3001\u672C\u5730\u517C\u5BB9\u670D\u52A1\u4E0E Jev \u5747\u53EF\u914D\u7F6E\u3002\u6DFB\u52A0\u670D\u52A1\u540E\uFF0C\u83B7\u53D6\u6216\u586B\u5199\u6A21\u578B ID\u3002"}</p>${c.models.length ? b("\u6E05\u9664\u7B5B\u9009", "clearAISearch", "", "outline") : b("\u6DFB\u52A0\u670D\u52A1", "newConnection", "", "primary")}</div>`}</div><p id="usage" class="small"></p></section>`;
+    const chosen = c.models.find((m) => m.id === modelId && !m.deleted) || rows[0];
+    if (chosen && !newEntity) {
+      modelId = chosen.id;
+      connectionId = chosen.connectionId;
+    }
+    const service = c.connections.find((p) => p.id === chosen?.connectionId);
+    return `<section class="settings-shell"><div class="main-head"><div><h1>AI \u8BBE\u7F6E</h1><p>\u53EA\u8D1F\u8D23\u5224\u65AD\u5267\u60C5\u60C5\u7EEA\u4E0E\u6C1B\u56F4\u3002</p></div></div>${currentModel()}<div class="ai-work"><aside class="surface model-index"><div class="section-heading"><h2>\u5DF2\u914D\u7F6E\u6A21\u578B</h2>${c.connections.some((p) => !p.disabled) ? b(icon("plus") + "\u6DFB\u52A0\u6A21\u578B", "newModel", "", "quiet") : ""}</div><div class="stack compact">${field("\u641C\u7D22\u6A21\u578B", "aiSearch", aiSearch, "search", 'placeholder="\u540D\u79F0\u3001\u6A21\u578B\u6216\u670D\u52A1"')}${select("\u6A21\u578B\u7C7B\u578B", "aiFilter", [["", "\u5168\u90E8\u6A21\u578B"], ["text", "\u901A\u7528\u8BED\u8A00\u6A21\u578B"], ["decision", "\u7ED3\u6784\u5316\u51B3\u7B56"], ["disabled", "\u5DF2\u505C\u7528"]], aiFilter)}</div><div class="model-index-list">${rows.map((m) => {
+      const p = c.connections.find((x) => x.id === m.connectionId);
+      return b(`<strong>${esc((m.name === p?.name ? m.model : m.name) || m.model || "\u672A\u547D\u540D\u6A21\u578B")}</strong><small>${esc(deployment(p?.base || ""))} \xB7 ${esc(modelKind(p))}</small><small>${m.disabled || p?.disabled ? "\u5DF2\u505C\u7528" : c.tasks.scene === m.id ? "\u5F53\u524D\u5224\u65AD\u6A21\u578B" : "\u5907\u7528\u914D\u7F6E"}</small>`, "pickModel", `data-id="${m.id}" aria-pressed="${modelId === m.id}"`, modelId === m.id ? "selected" : "");
+    }).join("") || '<p class="empty">\u8FD8\u6CA1\u6709\u7B26\u5408\u6761\u4EF6\u7684\u6A21\u578B\u3002\u6DFB\u52A0\u670D\u52A1\u540E\uFF0C\u9009\u62E9\u6216\u586B\u5199\u6A21\u578B ID\u3002</p>'}</div><div class="row">${b("\u5DF2\u5220\u9664\u6A21\u578B", "deletedModels", "", "quiet")}</div></aside><section class="surface model-editor"><div class="section-heading"><h2>${chosen ? "\u7F16\u8F91\u6A21\u578B" : "\u8FDE\u63A5\u4F60\u7684 AI"}</h2></div>${chosen ? `<div class="service-summary"><div><span class="small">\u670D\u52A1\u6765\u6E90 \xB7 ${esc(service?.protocol === "systemone" ? "TypeSafe System One" : "OpenAI \u517C\u5BB9")}</span><strong>${esc(service?.name)}</strong><p>${esc(service?.base || "\u5C1A\u672A\u586B\u5199\u5730\u5740")}</p></div><span class="small">\u8FDE\u63A5\u8BBE\u7F6E\u89C1\u4E0B\u65B9\u670D\u52A1\u914D\u7F6E</span></div>${modelForm()}` : `<div class="empty"><h2>\u5148\u6DFB\u52A0\u4E00\u4E2A\u670D\u52A1</h2><p>\u652F\u6301\u5728\u7EBF\u517C\u5BB9 API\u3001\u672C\u5730\u6A21\u578B\u670D\u52A1\u4E0E Jev\u3002\u54C1\u724C\u7531\u6240\u9009\u6A21\u578B\u547D\u540D\uFF0C\u63A5\u53E3\u7C7B\u578B\u5355\u72EC\u914D\u7F6E\u3002</p><p class="small">\u5728\u4E0B\u65B9\u670D\u52A1\u914D\u7F6E\u4E2D\u6DFB\u52A0\u5730\u5740\u4E0E\u9274\u6743\u3002</p></div>`}</section></div><p id="usage" class="small usage-line"></p>${servicesPage()}</section>`;
   }
   function servicesPage() {
-    return `<section class="settings-shell"><div class="main-head row between"><div><h1>\u670D\u52A1\u7BA1\u7406</h1><p>\u4E00\u4E2A\u670D\u52A1\u5730\u5740\u53EF\u4EE5\u63D0\u4F9B\u591A\u4E2A\u6A21\u578B\u3002\u6A21\u578B\u54C1\u724C\u4E0E\u670D\u52A1\u6765\u6E90\u5206\u522B\u8BB0\u5F55\u3002</p></div>${b(icon("plus") + "\u6DFB\u52A0\u670D\u52A1", "newConnection", "", "primary")}</div><div class="service-list">${c.connections.map((p) => `<article class="page-card"><div class="row between"><div><h2>${esc(p.name)}</h2><p>${esc(p.base || "\u5730\u5740\u672A\u914D\u7F6E")}</p></div>${b("\u7F16\u8F91\u670D\u52A1", "editConnection", `data-id="${p.id}"`, "outline")}</div><p class="small">${deployment(p.base)} \xB7 ${p.protocol === "systemone" ? "TypeSafe System One" : "OpenAI Chat Completions"} \xB7 ${c.models.filter((m) => m.connectionId === p.id).length} \u4E2A\u6A21\u578B \xB7 ${p.disabled ? "\u5DF2\u505C\u7528" : "\u5DF2\u542F\u7528"}</p>${b("\u4ECE\u6B64\u670D\u52A1\u6DFB\u52A0\u6A21\u578B", "addServiceModel", `data-id="${p.id}"`, "outline")}</article>`).join("") || "<p>\u5C1A\u65E0\u670D\u52A1\u3002\u5148\u6DFB\u52A0\u5730\u5740\u548C\u9274\u6743\uFF0C\u518D\u9009\u62E9\u6A21\u578B\u3002</p>"}</div></section>`;
-  }
-  function playback() {
-    return `<section class="page-card playback-page"><div class="main-head"><div><h1>\u64AD\u653E\u504F\u597D</h1><p>\u8C03\u6574\u81EA\u52A8\u64AD\u653E\u3001\u97F3\u91CF\u4E0E\u6362\u66F2\u65B9\u5F0F\u3002</p></div></div><div class="stack"><label class="checkline"><input id="enabled" type="checkbox" ${prefs.enabled ? "checked" : ""} data-pref="enabled"> \u5F00\u542F\u81EA\u52A8\u914D\u4E50</label><label class="checkline"><input id="floating" type="checkbox" ${prefs.floating ? "checked" : ""} data-pref="floating"> \u663E\u793A\u6E38\u620F\u5185\u60AC\u6D6E\u64AD\u653E\u5668</label>${field("\u603B\u97F3\u91CF", "volume", prefs.volume, "range", 'min="0" max="1" step=".01" data-pref="volume"')}${field("\u6362\u66F2\u4EA4\u53C9\u6DE1\u5165\u6DE1\u51FA\uFF08\u79D2\uFF09", "fade", prefs.fade, "number", 'min="0" max="10" step=".5" data-pref="fade"')}${select("\u65E0\u5339\u914D / \u9996\u6B21\u5224\u65AD\u5931\u8D25\u65F6", "defaultTrack", [["", "\u4FDD\u6301\u9759\u97F3"], ...live().map((t) => [t.id, t.name])], prefs.defaultTrack, 'data-pref="defaultTrack"')}<p>\u79BB\u5F00\u524D\u53F0\u6E38\u73A9\u9875\u505C\u6B62\u80CC\u666F\u64AD\u653E\uFF1B\u624B\u52A8\u6682\u505C\u4FDD\u6301\u6709\u6548\u3002\u8BBE\u7F6E\u9875\u4E3B\u52A8\u8BD5\u542C\u72EC\u7ACB\u63A7\u5236\u3002</p>${b("\u4FDD\u5B58\u64AD\u653E\u504F\u597D", "savePrefs", "", "primary")}${b("\u91CD\u7F6E\u60AC\u6D6E\u7A97\u4F4D\u7F6E", "resetPosition", "", "outline")}</div></section>`;
+    return `<section class="surface service-config"><div class="main-head row between"><div><h2>\u670D\u52A1\u914D\u7F6E</h2><p>\u4E00\u4E2A\u670D\u52A1\u5730\u5740\u53EF\u4EE5\u63D0\u4F9B\u591A\u4E2A\u6A21\u578B\u3002\u6A21\u578B\u54C1\u724C\u4E0E\u670D\u52A1\u6765\u6E90\u5206\u522B\u8BB0\u5F55\u3002</p></div>${b(icon("plus") + "\u6DFB\u52A0\u670D\u52A1", "newConnection", "", "primary")}</div><div class="service-list">${c.connections.map((p) => `<article class="page-card"><div class="row between"><div><h2>${esc(p.name)}</h2><p>${esc(p.base || "\u5730\u5740\u672A\u914D\u7F6E")}</p></div>${b("\u7F16\u8F91\u670D\u52A1", "editConnection", `data-id="${p.id}"`, "outline")}</div><p class="small">${deployment(p.base)} \xB7 ${p.protocol === "systemone" ? "TypeSafe System One" : "OpenAI Chat Completions"} \xB7 ${c.models.filter((m) => m.connectionId === p.id && !m.deleted).length} \u4E2A\u6A21\u578B \xB7 ${p.disabled ? "\u5DF2\u505C\u7528" : "\u5DF2\u542F\u7528"}</p></article>`).join("") || "<p>\u5C1A\u65E0\u670D\u52A1\u3002\u5148\u6DFB\u52A0\u5730\u5740\u548C\u9274\u6743\uFF0C\u518D\u9009\u62E9\u6A21\u578B\u3002</p>"}</div></section>`;
   }
   function groupPage() {
     return ["settings", "services"].includes(page) ? "settings" : ["playback", "data", "cache", "trash"].includes(page) ? "data" : page;
   }
   function subNavigation() {
-    const links = ["playback", "data", "cache", "trash"].includes(page) ? [["playback", "\u64AD\u653E\u504F\u597D"], ["data", "\u5907\u4EFD\u8FC1\u79FB"], ["cache", "\u5267\u60C5\u7F13\u5B58"], ["trash", "\u56DE\u6536\u4E0E\u6062\u590D"]] : page === "services" ? [["settings", "\u8FD4\u56DE AI \u8BBE\u7F6E"], ["services", "\u670D\u52A1\u7BA1\u7406"]] : null;
-    return links ? `<nav class="subnav" aria-label="\u7AE0\u8282\u5185\u5BFC\u822A">${links.map(([id, name]) => b(name, "page", `data-id="${id}" aria-current="${page === id ? "page" : "false"}"`, page === id ? "active" : "")).join("")}</nav>` : "";
+    return page === "trash" ? `<nav class="subnav" aria-label="\u8FD4\u56DE\u4E0A\u7EA7">${b("\u8FD4\u56DE\u504F\u597D\u4E0E\u6570\u636E", "page", 'data-id="data"', "quiet")}</nav>` : "";
+  }
+  function libraryPage() {
+    return `<section><div class="main-head"><div><h1>\u97F3\u4E50\u5E93</h1><p>\u7BA1\u7406\u672C\u5730\u97F3\u4E50\uFF0C\u4E3A\u5267\u60C5\u5339\u914D\u5408\u9002\u7684\u58F0\u97F3\u3002</p></div>${b(icon("plus") + "\u5BFC\u5165\u97F3\u4E50", "import", "", "primary")}</div><div class="library-work"><aside class="surface library-index"><h2 class="sr-only">\u66F2\u5E93\u7B5B\u9009</h2>${[["", "\u5168\u90E8\u97F3\u4E50", live().length], ["unclassified", "\u672A\u5206\u7C7B", live().filter((t) => !t.moods.some((id) => c.moods.some((m) => m.id === id && !m.disabled))).length], ["missing", "\u97F3\u9891\u7F3A\u5931", missingIds.size]].map(([id, name, count]) => b(`<span>${name}</span><span>${count}</span>`, "libraryFilter", `data-id="${id}" aria-pressed="${filter === id}"`, filter === id ? "selected" : "")).join("")}<h3>\u60C5\u7EEA\u5206\u7C7B</h3>${c.moods.filter((m) => !m.disabled).map((m) => b(`<span>${esc(m.name)}</span><span>${live().filter((t) => t.moods.includes(m.id)).length}</span>`, "libraryFilter", `data-id="${m.id}" aria-pressed="${filter === m.id}"`, filter === m.id ? "selected" : "")).join("")}<p class="small">\u97F3\u9891\u4FDD\u5B58\u5728\u672C\u673A\uFF0C\u4E0D\u4E0A\u4F20\u7ED9 AI\u3002</p></aside><section class="surface library-table"><div class="toolbar"><input id="search" aria-label="\u641C\u7D22\u66F2\u76EE" placeholder="\u641C\u7D22\u66F2\u540D\u3001\u60C5\u7EEA\u6216\u6807\u7B7E" value="${esc(search)}"><select id="filter" aria-label="\u60C5\u7EEA\u7B5B\u9009">${opts([["", "\u5168\u90E8\u60C5\u7EEA"], ["unclassified", "\u672A\u5206\u7C7B"], ["missing", "\u97F3\u9891\u7F3A\u5931"], ...c.moods.map((m) => [m.id, m.name])], filter)}</select></div><div class="row bulk-actions">${b("\u5168\u9009", "selectVisible", "", "quiet")}${b("\u53D6\u6D88\u9009\u62E9", "clearBulk", "", "quiet")}${b("\u6279\u91CF\u7F16\u8F91", "bulkEdit", "", "outline")}<span id="bulkCount" class="small">\u5DF2\u9009 ${bulk.size} \u9996</span></div>${list()}<details class="import-summary"><summary>\u4E0A\u6B21\u5BFC\u5165\u62A5\u544A</summary><pre class="import-report">${esc(importReport || "\u672C\u6B21\u4F1A\u8BDD\u5C1A\u672A\u5BFC\u5165\u97F3\u4E50")}</pre></details></section><div class="surface editor-region">${editor()}</div></div></section>`;
   }
   function render() {
-    const full = page !== "library";
     document.body.dataset.chapter = groupPage();
-    $("app").innerHTML = `<a class="skip-link" href="#mainContent">\u8DF3\u5230\u4E3B\u8981\u5185\u5BB9</a><header class="lab"><div class="lab-top"><div class="brand">${icon("music")}<span>\u968F\u5883\u914D\u4E50</span></div><nav class="nav" aria-label="\u529F\u80FD\u5BFC\u822A">${[["diagnostics", "\u64AD\u653E"], ["library", "\u97F3\u4E50\u5E93"], ["categories", "\u60C5\u7EEA\u573A\u666F"], ["settings", "AI \u8BBE\u7F6E"], ["data", "\u504F\u597D\u4E0E\u6570\u636E"]].map(([id, name]) => b(`<span>${name}</span>`, "page", `data-id="${id}" data-chapter="${id}" aria-current="${groupPage() === id ? "page" : "false"}"`, groupPage() === id ? "active" : "")).join("")}</nav><div class="header-actions">${b("\u505C\u6B62\u8BD5\u542C", "stop", "", "header-button")}${b(runtime.paused ? "\u6062\u590D\u914D\u4E50" : "\u6682\u505C\u914D\u4E50", "pause", 'id="globalPause"', "header-button")}</div></div></header><div class="workspace ${full ? "combo-wide" : ""}"><main class="main" id="mainContent" tabindex="-1"><div id="pageError" role="alert" class="persistent-error" hidden></div>${page === "diagnostics" ? diagnosticPage() : page === "data" ? dataPage() : page === "categories" ? scenes() : page === "settings" ? settings() : page === "services" ? servicesPage() : page === "cache" ? cachePage() : page === "playback" ? playback() : `<div class="main-head"><div><h1>${page === "trash" ? "\u56DE\u6536\u4E0E\u6062\u590D" : "\u97F3\u4E50\u5E93"}</h1><p>${live().length} \u9996\u97F3\u4E50 \xB7 \u624B\u52A8\u5206\u7C7B\uFF0C\u4FDD\u5B58\u5728\u672C\u673A</p></div>${page === "trash" ? b("\u6062\u590D\u66F2\u5E93\u64CD\u4F5C", "libraryHistory", "", "outline") : b(icon("plus") + "\u5BFC\u5165\u97F3\u4E50", "import", "", "primary")}</div>${page === "library" ? `<details class="import-summary"><summary>\u4E0A\u6B21\u5BFC\u5165\u62A5\u544A</summary><pre class="import-report">${esc(importReport || "\u672C\u6B21\u4F1A\u8BDD\u5C1A\u672A\u5BFC\u5165\u97F3\u4E50")}</pre></details>` : ""}<div class="toolbar"><input id="search" aria-label="\u641C\u7D22\u66F2\u76EE" placeholder="\u641C\u7D22\u66F2\u540D\u3001\u60C5\u7EEA\u6216\u6807\u7B7E" value="${esc(search)}"><select id="filter" aria-label="\u60C5\u7EEA\u7B5B\u9009">${opts([["", "\u5168\u90E8\u60C5\u7EEA"], ["unclassified", "\u672A\u5206\u7C7B\uFF0F\u7C7B\u522B\u505C\u7528"], ["missing", "\u97F3\u9891\u7F3A\u5931"], ...c.moods.map((m) => [m.id, m.name])], filter)}</select></div>${page === "trash" ? "" : `<div class="row bulk-actions">${b("\u5168\u9009\u5F53\u524D\u5217\u8868", "selectVisible", "", "outline")}${b("\u53D6\u6D88\u9009\u62E9", "clearBulk", "", "quiet")}${b("\u6279\u91CF\u7F16\u8F91", "bulkEdit", "", "outline")}<span id="bulkCount" class="small">\u5DF2\u9009 ${bulk.size} \u9996</span></div>`}${list()}`}</main>${full ? "" : `<div class="editor-region">${editor()}</div>`}</div><footer class="app-footer"><span>AI \u5224\u65AD\u6C1B\u56F4 \xB7 \u672C\u5730\u9009\u62E9\u97F3\u4E50</span><span>\u968F\u5883\u914D\u4E50 1.5.0</span></footer>`;
+    $("app").innerHTML = `<a class="skip-link" href="#mainContent">\u8DF3\u5230\u4E3B\u8981\u5185\u5BB9</a><header class="lab"><div class="lab-top"><div class="brand">${icon("music")}<span>\u968F\u5883\u914D\u4E50</span></div><nav class="nav" aria-label="\u529F\u80FD\u5BFC\u822A">${[["diagnostics", "\u64AD\u653E"], ["library", "\u97F3\u4E50\u5E93"], ["categories", "\u60C5\u7EEA\u573A\u666F"], ["settings", "AI \u8BBE\u7F6E"], ["data", "\u504F\u597D\u4E0E\u6570\u636E"]].map(([id, name]) => b(`<span>${name}</span>`, "page", `data-id="${id}" data-chapter="${id}" aria-current="${groupPage() === id ? "page" : "false"}"`, groupPage() === id ? "active" : "")).join("")}</nav><div class="header-actions">${b(runtime.paused ? "\u6062\u590D\u914D\u4E50" : "\u6682\u505C\u914D\u4E50", "pause", 'id="globalPause"', "header-button")}</div></div></header><div class="workspace combo-wide"><main class="main" id="mainContent" tabindex="-1"><div id="pageError" role="alert" class="persistent-error" hidden></div>${page === "diagnostics" ? diagnosticPage() : page === "library" ? libraryPage() : page === "data" ? dataPage() : page === "categories" ? scenes() : page === "settings" ? settings() : `<div class="main-head"><div><h1>\u56DE\u6536\u4E0E\u6062\u590D</h1><p>\u79FB\u5165\u8FD9\u91CC\u7684\u97F3\u4E50\u53EF\u4EE5\u968F\u65F6\u6062\u590D\u3002</p></div>${b("\u6062\u590D\u66F2\u5E93\u64CD\u4F5C", "libraryHistory", "", "outline")}</div>${list()}`}</main></div><footer class="app-footer"><span>AI \u5224\u65AD\u6C1B\u56F4 \xB7 \u672C\u5730\u9009\u62E9\u97F3\u4E50</span><span>\u968F\u5883\u914D\u4E50 1.6.2</span></footer><div id="previewDock" class="preview-dock" hidden></div>`;
     document.querySelector(".main-head")?.insertAdjacentHTML("afterend", subNavigation());
     document.documentElement.style.setProperty("--chrome-height", document.querySelector(".lab").clientHeight + "px");
+    updatePreview();
     void usage();
     void refreshCache();
-    if (page === "diagnostics") void refreshReadiness();
+    if (["diagnostics", "data"].includes(page)) void refreshReadiness();
   }
   function modal(title, body) {
     focusReturn = document.activeElement;
@@ -690,6 +724,7 @@
   async function usage() {
     if (!$("usage")) return;
     const u = (await chrome.storage.local.get("usage")).usage;
+    if (!$("usage")) return;
     $("usage").textContent = u ? `\u7D2F\u8BA1 ${u.requests} \u6B21\u6210\u529F\u54CD\u5E94 \xB7 \u8F93\u5165 ${u.input} / \u8F93\u51FA ${u.output} token \xB7 ${u.unknown || 0} \u6B21\u7528\u91CF\u672A\u77E5\uFF08\u5931\u8D25\u8BF7\u6C42\u53EF\u80FD\u4ECD\u88AB\u670D\u52A1\u8BA1\u8D39\uFF09` : "\u5C1A\u65E0\u7528\u91CF\u8BB0\u5F55\u3002\u672A\u77E5 token \u4E0D\u8BA1\u4E3A\u96F6\u3002";
   }
   async function runModel(input, override) {
@@ -709,6 +744,13 @@
   function capture(e) {
     const el = e.target;
     const value = el.type === "checkbox" ? el.checked : ["number", "range"].includes(el.type) ? +el.value : el.value;
+    if (el.id === "moodName" || el.id === "moodDesc") {
+      const original = c.moods.find((m) => m.id === scene);
+      const d = moodDrafts[scene] ??= { name: original.name, description: original.description };
+      d[el.id === "moodName" ? "name" : "description"] = String(value);
+      if ($("moodDirty")) $("moodDirty").textContent = d.name !== original.name || d.description !== original.description ? "\u6709\u672A\u4FDD\u5B58\u7684\u4FEE\u6539" : "\u5DF2\u4FDD\u5B58\u5230\u672C\u5730";
+    }
+    if (el.id === "previewSeek" && preview && Number.isFinite(preview.duration)) preview.currentTime = Math.min(preview.duration, Number(value));
     if (el.dataset.bulk) {
       el.checked ? bulk.add(el.dataset.bulk) : bulk.delete(el.dataset.bulk);
       if ($("bulkCount")) $("bulkCount").textContent = "\u5DF2\u9009 " + bulk.size + " \u9996";
@@ -722,6 +764,7 @@
       draft()[k] = el.checked ? [.../* @__PURE__ */ new Set([...draft()[k], el.value])] : draft()[k].filter((x) => x !== el.value);
       if ($("dirty")) $("dirty").textContent = "\u6709\u672A\u4FDD\u5B58\u7684\u4FEE\u6539";
     }
+    if (el.id === "volume" && $("volumeValue")) $("volumeValue").textContent = Math.round(Number(value) * 100) + "%";
     if (el.dataset.conn) cp()[el.dataset.conn] = value;
     if (el.dataset.model && mp()) mp()[el.dataset.model] = value;
     if (el.dataset.pref) prefs[el.dataset.pref] = value;
@@ -798,6 +841,19 @@
   });
   async function act(action, id) {
     if (await advancedAction(action, id)) return;
+    if (action === "previewPause") {
+      if (preview) {
+        if (preview.paused) await preview.play();
+        else preview.pause();
+        updatePreview();
+      }
+      return;
+    }
+    if (action === "libraryFilter") {
+      filter = id;
+      render();
+      return;
+    }
     if (action === "clearAISearch") {
       aiSearch = "";
       aiFilter = "";
@@ -831,7 +887,7 @@
       return;
     }
     if (action === "page") {
-      page = id;
+      page = { services: "settings", cache: "data", playback: "data" }[id] || id;
       render();
       window.scrollTo?.(0, 0);
       document.querySelector("#mainContent")?.focus({ preventScroll: true });
@@ -846,6 +902,17 @@
     }
     if (action === "scene") {
       scene = id;
+      render();
+      return;
+    }
+    if (action === "resetMood") {
+      delete moodDrafts[id];
+      render();
+      return;
+    }
+    if (action === "clearLibraryFilters") {
+      search = "";
+      filter = "";
       render();
       return;
     }
@@ -908,24 +975,26 @@
     }
     if (action === "newMood" || action === "editMood") {
       const m = action === "editMood" ? c.moods.find((m2) => m2.id === scene) : null;
-      modal(m ? "\u7F16\u8F91\u573A\u666F" : "\u65B0\u5EFA\u573A\u666F", `<div class="stack">${field("\u7C7B\u522B\u540D\u79F0", "moodName", m?.name || "")}${area("\u4EC0\u4E48\u60C5\u51B5\u4E0B\u4F7F\u7528\uFF1F", "moodDesc", m?.description || "")}${b("\u4FDD\u5B58\u573A\u666F", "saveMood", `data-id="${m?.id || ""}"`, "primary")}</div>`);
+      modal(m ? "\u7F16\u8F91\u573A\u666F" : "\u65B0\u5EFA\u573A\u666F", `<div class="stack">${field("\u7C7B\u522B\u540D\u79F0", "dialogMoodName", m?.name || "")}${area("\u4EC0\u4E48\u60C5\u51B5\u4E0B\u4F7F\u7528\uFF1F", "dialogMoodDesc", m?.description || "")}${b("\u4FDD\u5B58\u573A\u666F", "saveMood", `data-id="${m?.id || ""}"`, "primary")}</div>`);
       return;
     }
     if (action === "saveMood") {
-      const name = $("moodName").value.trim(), description = $("moodDesc").value.trim();
+      const scope = $("dialog").open ? $("dialog") : document;
+      const name = scope.querySelector($("dialog").open ? "#dialogMoodName" : "#moodName").value.trim(), description = scope.querySelector($("dialog").open ? "#dialogMoodDesc" : "#moodDesc").value.trim();
       if (!name || !description) throw Error("\u8BF7\u586B\u5199\u540D\u79F0\u548C\u8BF4\u660E");
       if (c.moods.some((m2) => m2.name === name && m2.id !== id)) throw Error("\u5DF2\u6709\u540C\u540D\u7C7B\u522B");
       if (c.moods.filter((m2) => !m2.disabled).length >= 24 && !id) throw Error("\u4E3A\u63A7\u5236\u8F93\u5165\u4F53\u79EF\uFF0C\u60C5\u7EEA\u7C7B\u522B\u6700\u591A 24 \u4E2A");
       const m = { ...c.moods.find((x) => x.id === id) || {}, id: id || crypto.randomUUID(), name: name.slice(0, 40), description: description.slice(0, 300) };
       await persist({ moods: id ? c.moods.map((x) => x.id === id ? m : x) : [...c.moods, m] });
       scene = m.id;
+      delete moodDrafts[m.id];
       close();
       render();
       notice("\u573A\u666F\u5DF2\u4FDD\u5B58\uFF1B\u540E\u7EED\u56DE\u5408\u4F7F\u7528\u65B0\u5B9A\u4E49\uFF0C\u4E0D\u81EA\u52A8\u91CD\u65B0\u8BF7\u6C42\u5F53\u524D\u56DE\u5408");
       return;
     }
     if (action === "editTags") {
-      modal("\u7BA1\u7406\u6807\u7B7E\u8BCD\u8868", `<p>\u6700\u591A 40 \u4E2A\u3002\u5DF2\u6709\u66F2\u76EE\u4F7F\u7528\u7684\u6807\u7B7E\u4E0D\u80FD\u76F4\u63A5\u79FB\u9664\uFF0C\u8BF7\u5148\u7F16\u8F91\u76F8\u5173\u66F2\u76EE\u3002</p>${area("\u9017\u53F7\u5206\u9694\u6807\u7B7E", "tags", c.tags.join("\uFF0C"))}${b("\u4FDD\u5B58\u6807\u7B7E", "saveTags", "", "primary")}`);
+      modal("\u81EA\u5B9A\u4E49\u6807\u7B7E", `<p>\u6807\u7B7E\u7528\u4E8E\u8865\u5145\u60C5\u7EEA\u5206\u7C7B\uFF0C\u4F8B\u5982\u68EE\u6797\u3001\u96E8\u591C\u3001\u8FFD\u9010\u3002\u8F93\u5165\u65B0\u6807\u7B7E\u540E\u4FDD\u5B58\uFF0C\u518D\u5728\u66F2\u76EE\u8BE6\u60C5\u52FE\u9009\u3002\u6700\u591A 40 \u4E2A\u3002\u5DF2\u6709\u66F2\u76EE\u4F7F\u7528\u7684\u6807\u7B7E\u4E0D\u80FD\u76F4\u63A5\u79FB\u9664\uFF0C\u8BF7\u5148\u7F16\u8F91\u76F8\u5173\u66F2\u76EE\u3002</p>${area("\u9017\u53F7\u5206\u9694\u6807\u7B7E", "tags", c.tags.join("\uFF0C"))}${b("\u4FDD\u5B58\u6807\u7B7E", "saveTags", "", "primary")}`);
       return;
     }
     if (action === "saveTags") {
@@ -936,6 +1005,7 @@
       await persist({ tags });
       close();
       render();
+      notice("\u81EA\u5B9A\u4E49\u6807\u7B7E\u5DF2\u4FDD\u5B58\uFF0C\u53EF\u5728\u66F2\u76EE\u8BE6\u60C5\u4E2D\u9009\u62E9");
       return;
     }
     if (action === "assign") {
@@ -1004,7 +1074,7 @@
       if (!await chrome.permissions.request({ origins: [origin] })) throw Error("\u672A\u83B7\u5F97\u63A5\u53E3\u8BBF\u95EE\u6743\u9650\uFF1B\u8349\u7A3F\u4FDD\u7559\uFF0C\u5C1A\u672A\u4FDD\u5B58");
       await persist({ connections: newEntity ? [...c.connections, p] : c.connections.map((x) => x.id === p.id ? p : x) });
       close();
-      page = "services";
+      page = "settings";
       render();
       notice("\u670D\u52A1\u5DF2\u4FDD\u5B58\uFF1B\u73B0\u5728\u53EF\u4EE5\u6DFB\u52A0\u6A21\u578B\uFF0C\u672A\u53D1\u9001\u5206\u7C7B\u8BF7\u6C42");
       return;
@@ -1012,7 +1082,7 @@
     if (action === "newModel" || action === "addServiceModel") {
       const p = (id ? c.connections.find((p2) => p2.id === id) : c.connections.find((p2) => p2.id === connectionId && !p2.disabled)) || c.connections.find((p2) => !p2.disabled);
       if (!p) {
-        page = "services";
+        page = "settings";
         render();
         throw Error("\u8BF7\u5148\u6DFB\u52A0\u5E76\u542F\u7528\u4E00\u4E2A\u670D\u52A1");
       }
@@ -1024,12 +1094,18 @@
       refreshAI();
       return;
     }
-    if (action === "editModel") {
+    if (action === "editModel" || action === "pickModel") {
       modelId = id;
       connectionId = c.models.find((m) => m.id === id).connectionId;
       newEntity = false;
-      aiEditor = "model";
-      refreshAI();
+      aiEditor = "";
+      render();
+      return;
+    }
+    if (action === "resetModel") {
+      delete modelDrafts[modelId];
+      delete rawExtra[modelId];
+      render();
       return;
     }
     if (action === "suggestModel") {
@@ -1047,6 +1123,8 @@
       validateModel(m, p);
       await persist({ models: newEntity ? [...c.models, m] : c.models.map((x) => x.id === m.id ? m : x) });
       delete testResults[m.id];
+      delete modelDrafts[m.id];
+      delete rawExtra[m.id];
       close();
       page = "settings";
       render();
@@ -1212,10 +1290,14 @@
   $("dialog").addEventListener("close", () => {
     discardAI();
     drawer = false;
+    if (page === "settings") render();
   });
   window.addEventListener("beforeunload", (e) => {
     const dirty = Object.values(drafts).some((t) => JSON.stringify(t) !== JSON.stringify(tracks.find((x) => x.id === t.id))) || Object.keys(connectionDrafts).some((id) => JSON.stringify(connectionDrafts[id]) !== JSON.stringify(c.connections.find((x) => x.id === id))) || Object.keys(modelDrafts).some((id) => JSON.stringify(modelDrafts[id]) !== JSON.stringify(c.models.find((x) => x.id === id)));
-    if (dirty || Object.keys(rawHeaders).length || Object.keys(rawExtra).length || JSON.stringify(taskDraft) !== JSON.stringify({ ...c.tasks, maxOutput: c.maxOutput || 220, maxChars: c.maxChars }) || Object.entries(prefs).some(([k, v]) => c[k] !== v)) {
+    if (Object.entries(moodDrafts).some(([id, d]) => {
+      const m = c.moods.find((x) => x.id === id);
+      return m && (m.name !== d.name || m.description !== d.description);
+    }) || dirty || Object.keys(rawHeaders).length || Object.keys(rawExtra).length || JSON.stringify(taskDraft) !== JSON.stringify({ ...c.tasks, maxOutput: c.maxOutput || 220, maxChars: c.maxChars }) || Object.entries(prefs).some(([k, v]) => c[k] !== v)) {
       e.preventDefault();
       e.returnValue = "";
     }
@@ -1241,7 +1323,8 @@
         runtime = await send("state");
         if ($("globalPause")) $("globalPause").textContent = runtime.paused ? "\u6062\u590D\u914D\u4E50" : "\u6682\u505C\u914D\u4E50";
         if ($("liveStatus")) $("liveStatus").innerHTML = status();
-        if (page === "diagnostics") void refreshReadiness();
+        if (["diagnostics", "data"].includes(page)) void refreshReadiness();
+        updatePreview();
       } catch {
       }
     }, 1500);
@@ -1250,21 +1333,23 @@
     $("app").textContent = "\u8BBE\u7F6E\u9875\u52A0\u8F7D\u5931\u8D25\uFF1A" + e.message;
   });
   function diagnosticPage() {
-    return `<section class="settings-shell"><div class="main-head"><div><h1>\u64AD\u653E</h1><p>\u8BA9\u97F3\u4E50\u8DDF\u968F\u6545\u4E8B\u3002\u60C5\u7EEA\u7531 AI \u5224\u65AD\uFF0C\u66F2\u76EE\u5728\u672C\u5730\u9009\u62E9\u3002</p></div><div class="row">${b("\u67E5\u770B\u6E38\u620F\u8FDE\u63A5", "showConnections", "", "outline")}${b("\u6253\u5F00\u97F3\u4E50\u5E93", "page", 'data-id="library"', "outline")}</div></div><div class="play-work"><section class="play-main"><div class="section-heading"><h2>\u5F53\u524D\u914D\u4E50</h2><span id="playState" class="small"></span></div><div id="runtimeDetail"></div><div class="row transport">${b("\u5F00\u59CB\u914D\u4E50", "startMusic", "", "primary")}${b("\u4E0B\u4E00\u9996", "nextMusic", "", "outline")}${b("\u505C\u6B62\u8BD5\u542C", "stop", "", "quiet")}</div><div id="selectionDetail" class="atmosphere"></div><div class="section-heading"><h3>\u9002\u5408\u5F53\u524D\u6C1B\u56F4\u7684\u97F3\u4E50</h3>${b("\u67E5\u770B\u5168\u90E8", "page", 'data-id="library"', "quiet")}</div><div id="candidateTracks"></div><details class="connection-panel" id="gameConnections"><summary>\u6E38\u73A9\u9875\u8FDE\u63A5\u4E0E\u9009\u66F2\u8BE6\u60C5</summary><label class="label" for="targetGame">\u5DF2\u8FDE\u63A5\u7684\u6E38\u73A9\u9875</label><select id="targetGame"></select><p class="small">\u5F00\u59CB\u914D\u4E50\u4F1A\u5224\u65AD\u5F53\u524D\u5B8C\u6574\u5267\u60C5\uFF1B\u7F13\u5B58\u547D\u4E2D\u4E0D\u65B0\u589E\u8BF7\u6C42\u3002\u8BF7\u8FD4\u56DE\u6240\u9009\u6E38\u620F\u9875\u64AD\u653E\u3002</p><div class="row">${b("\u56FA\u5B9A\u6B64\u6E38\u620F", "pinGame", "", "outline")}${b("\u53D6\u6D88\u56FA\u5B9A", "unpinGame", "", "quiet")}</div><div id="selectionReasons"></div></details></section><aside class="play-aside"><h2>\u64AD\u653E\u504F\u597D</h2><div class="model-summary"><h3>\u5F53\u524D\u5224\u65AD\u6A21\u578B</h3><p>${esc(modelName(c.tasks.scene))}</p>${b("\u7BA1\u7406\u6A21\u578B", "page", 'data-id="settings"', "quiet")}<p class="small">\u6BCF\u56DE\u5408\u4E00\u4E2A\u6A21\u578B\uFF0C\u53EA\u5224\u65AD\u60C5\u7EEA\u6C1B\u56F4\u3002</p></div><div class="stack">${field("\u603B\u97F3\u91CF", "volume", prefs.volume, "range", 'min="0" max="1" step=".01" data-pref="volume"')}${field("\u6362\u66F2\u8FC7\u6E21\uFF08\u79D2\uFF09", "fade", prefs.fade, "number", 'min="0" max="10" step=".5" data-pref="fade"')}<label class="checkline"><input id="enabled" type="checkbox" ${prefs.enabled ? "checked" : ""} data-pref="enabled">\u81EA\u52A8\u914D\u4E50</label><label class="checkline"><input id="floating" type="checkbox" ${prefs.floating ? "checked" : ""} data-pref="floating">\u663E\u793A\u6E38\u620F\u5185\u64AD\u653E\u5668</label>${b("\u4FDD\u5B58\u64AD\u653E\u504F\u597D", "savePrefs", "", "primary")}</div><p class="small aside-note">\u5224\u65AD\u671F\u95F4\u4FDD\u6301\u97F3\u4E50\u3002\u540C\u66F2\u6CBF\u7528\u539F\u8FDB\u5EA6\uFF1B\u79BB\u5F00\u524D\u53F0\u6E38\u73A9\u9875\u540E\u505C\u6B62\u64AD\u653E\u3002</p></aside></div><details class="readiness-panel"><summary id="readinessSummary">\u8FD0\u884C\u68C0\u67E5 \xB7 \u67E5\u770B\u51C6\u5907\u60C5\u51B5</summary><div id="readyChecks"></div><div class="row">${b("\u5237\u65B0\u68C0\u67E5", "refreshReady", "", "outline")}${b("\u590D\u5236\u8131\u654F\u8BCA\u65AD", "copyDiagnostics", "", "outline")}</div><p class="small">\u8BCA\u65AD\u4E0D\u8BF7\u6C42 AI\uFF0C\u4E0D\u5305\u542B\u5BC6\u94A5\u6216\u5267\u60C5\u5168\u6587\u3002</p></details></section>`;
+    return `<section><div class="main-head"><div><h1>\u64AD\u653E</h1><p>\u4E3A\u5F53\u524D\u6545\u4E8B\u914D\u4E50\u3002</p></div></div><div class="dashboard-grid"><div class="dashboard-left"><section class="surface now-playing"><div class="track-art" aria-hidden="true">${icon("music")}<span>\u6545\u4E8B\u7684\u58F0\u97F3</span></div><div class="player-info"><div class="section-heading"><h2>\u5F53\u524D\u914D\u4E50</h2><span id="playState" class="small"></span></div><div id="runtimeDetail"></div><div class="row transport">${b(icon("play") + "\u5F00\u59CB\u914D\u4E50", "startMusic", "", "primary")}${b(icon("next") + "\u4E0B\u4E00\u9996", "nextMusic", "", "outline")}</div><p id="playPosition" class="small">\u7B49\u5F85\u64AD\u653E</p></div></section><div id="judgingStatus" class="judging-status" role="status">\u5224\u65AD\u671F\u95F4\u7EE7\u7EED\u64AD\u653E\uFF0C\u76F8\u540C\u66F2\u76EE\u4FDD\u6301\u8FDB\u5EA6\u3002</div><section class="surface candidates-panel"><div class="section-heading"><h2>\u5339\u914D\u66F2\u76EE</h2></div><div id="candidateTracks"></div></section></div><aside class="dashboard-right"><section class="surface atmosphere-panel"><h2>\u5F53\u524D\u6C1B\u56F4</h2><div id="selectionDetail"></div><div class="rule model-summary"><h3>\u5F53\u524D\u5224\u65AD\u6A21\u578B</h3><p>${esc(modelName(c.tasks.scene))}</p><p class="small">AI \u5224\u65AD\u6C1B\u56F4\uFF0C\u672C\u5730\u9009\u62E9\u97F3\u4E50\u3002</p></div></section><section class="surface rules-panel"><h2>\u64AD\u653E\u89C4\u5219</h2><div class="rule-row"><span>\u5224\u65AD\u671F\u95F4\u7EE7\u7EED\u64AD\u653E</span><strong>\u81EA\u52A8\u4FDD\u6301</strong></div><div class="rule-row"><span>\u76F8\u540C\u66F2\u76EE\u4FDD\u6301\u8FDB\u5EA6</span><strong>\u81EA\u52A8\u4FDD\u6301</strong></div></section><p class="small">\u4EC5\u5728\u524D\u53F0\u6E38\u73A9\u65F6\u81EA\u52A8\u914D\u4E50\uFF1B\u672C\u9875\u8BD5\u542C\u5355\u72EC\u63A7\u5236\u3002</p></aside></div><details class="surface connection-panel" id="gameConnections"><summary>\u6E38\u73A9\u9875\u8FDE\u63A5\u4E0E\u9009\u66F2\u8BE6\u60C5</summary><label class="label" for="targetGame">\u5DF2\u8FDE\u63A5\u7684\u6E38\u73A9\u9875</label><select id="targetGame"></select><p class="small">\u5F00\u59CB\u914D\u4E50\u4F1A\u5224\u65AD\u5F53\u524D\u5B8C\u6574\u5267\u60C5\uFF1B\u7F13\u5B58\u547D\u4E2D\u4E0D\u65B0\u589E\u8BF7\u6C42\u3002\u8BF7\u8FD4\u56DE\u6240\u9009\u6E38\u620F\u9875\u64AD\u653E\u3002</p><div class="row">${b("\u56FA\u5B9A\u6B64\u6E38\u620F", "pinGame", "", "outline")}${b("\u53D6\u6D88\u56FA\u5B9A", "unpinGame", "", "quiet")}</div><div id="selectionReasons"></div></details></section>`;
   }
   var readinessBusy = false;
   async function refreshReadiness() {
-    if (readinessBusy || !$("readyChecks")) return;
+    if (readinessBusy || !($("readyChecks") || $("runtimeDetail"))) return;
     readinessBusy = true;
     try {
       readyState = await send("readiness");
-      if (!$("readyChecks")) return;
+      if (!($("readyChecks") || $("runtimeDetail"))) return;
       if ($("readinessSummary")) $("readinessSummary").textContent = readyState.allReady ? "\u8FD0\u884C\u68C0\u67E5 \xB7 \u51C6\u5907\u5C31\u7EEA" : `\u8FD0\u884C\u68C0\u67E5 \xB7 ${readyState.checks.filter((x) => !x.ok).length} \u9879\u5F85\u5904\u7406`;
-      $("readyChecks").innerHTML = `<p class="small">\u7248\u672C ${esc(readyState.version)} \xB7 ${readyState.allReady ? "\u57FA\u7840\u6761\u4EF6\u5DF2\u5C31\u7EEA" : "\u8FD8\u6709\u51C6\u5907\u9879\u672A\u5B8C\u6210"}</p>` + readyState.checks.map((x) => `<div class="check-result"><strong>${esc(x.name)}</strong><span><b>${x.ok ? "\u5DF2\u5C31\u7EEA" : "\u5F85\u5904\u7406"}</b> \xB7 ${esc(x.detail)}</span></div>`).join("");
+      if ($("readyChecks")) $("readyChecks").innerHTML = `<p class="small">\u7248\u672C ${esc(readyState.version)} \xB7 ${readyState.allReady ? "\u57FA\u7840\u6761\u4EF6\u5DF2\u5C31\u7EEA" : "\u8FD8\u6709\u51C6\u5907\u9879\u672A\u5B8C\u6210"}</p>` + readyState.checks.map((x) => `<div class="check-result"><strong>${esc(x.name)}</strong><span><b>${x.ok ? "\u5DF2\u5C31\u7EEA" : "\u5F85\u5904\u7406"}</b> \xB7 ${esc(x.detail)}</span></div>`).join("");
       runtime = await send("state");
       if (!$("runtimeDetail")) return;
       $("runtimeDetail").innerHTML = `<h2 class="current-song">${esc(runtime.trackName || "\u8FD8\u6CA1\u6709\u97F3\u4E50\u64AD\u653E")}</h2><p>${esc(runtime.source ? `${runtime.source.title} \xB7 \u7B2C ${runtime.source.turn} \u56DE\u5408` : "\u7B49\u5F85\u524D\u53F0\u6E38\u73A9\u9875\u9762\u8FDE\u63A5")}</p>${runtime.error ? `<p class="runtime-error">${esc(runtime.error)}</p>` : ""}`;
       $("playState").textContent = runtime.status || "\u7B49\u5F85\u8FDE\u63A5";
+      if ($("playPosition")) $("playPosition").textContent = runtime.trackId ? "\u5DF2\u64AD\u653E " + formatTime(runtime.position || 0) + " \xB7 \u4FDD\u6301\u539F\u66F2\u8FDB\u5EA6" : "\u7B49\u5F85\u64AD\u653E";
+      if ($("judgingStatus")) $("judgingStatus").textContent = runtime.pending ? "\u6B63\u5728\u5224\u65AD\u65B0\u5267\u60C5\uFF0C\u5F53\u524D\u97F3\u4E50\u4FDD\u6301\u64AD\u653E\u3002" : runtime.error ? "\u5224\u65AD\u9047\u5230\u95EE\u9898\uFF0C\u8BF7\u68C0\u67E5\u6A21\u578B\u8BBE\u7F6E\uFF1B\u4E0D\u4F1A\u81EA\u52A8\u5207\u6362\u670D\u52A1\u3002" : "\u5224\u65AD\u671F\u95F4\u7EE7\u7EED\u64AD\u653E\uFF0C\u76F8\u540C\u66F2\u76EE\u4FDD\u6301\u8FDB\u5EA6\u3002";
       const old = $("targetGame").value;
       $("targetGame").innerHTML = opts(readyState.targets.map((t) => [String(t.tabId), `${t.title} \xB7 ${t.connected ? "\u5DF2\u8FDE\u63A5" : "\u672A\u8FDE\u63A5"} \xB7 ${t.turn ?? "?"} \u56DE\u5408`]), old || String(runtime.pinnedTab || readyState.targets[0]?.tabId || ""));
       const e = runtime.explanation;
@@ -1280,7 +1365,7 @@
     }
   }
   function dataPage() {
-    return `<section class="settings-shell backup-layout"><div class="main-head"><div><h1>\u66F2\u5E93\u5907\u4EFD</h1><p>\u66F2\u5E93\u8D44\u6599\u4E0E\u97F3\u9891\u53EF\u8FC1\u79FB\uFF0C\u5BC6\u94A5\u548C\u6A21\u578B\u8FDE\u63A5\u4E0D\u5305\u542B\u5728\u5907\u4EFD\u4E2D\u3002</p></div></div><div class="page-card"><h2>\u5BFC\u51FA\u66F2\u5E93</h2><label class="checkline"><input type="checkbox" id="includeAudio"> \u5305\u542B\u97F3\u9891\u526F\u672C\uFF08\u6700\u591A 512MB \u539F\u59CB\u97F3\u9891\uFF1B\u6587\u4EF6\u8F83\u5927\u65F6\u8BF7\u7A0D\u5019\uFF09</label><p>\u4EC5\u8D44\u6599\u5907\u4EFD\u9002\u5408\u4FDD\u7559\u5206\u7C7B\uFF1B\u8FC1\u79FB\u5230\u65B0\u6D4F\u89C8\u5668\u65F6\uFF0C\u672A\u5305\u542B\u97F3\u9891\u7684\u66F2\u76EE\u4F1A\u6807\u8BB0\u4E3A\u97F3\u9891\u7F3A\u5931\u3002</p>${b("\u5BFC\u51FA\u5907\u4EFD\u6587\u4EF6", "exportLibrary", "", "primary")}</div><div class="page-card"><h2>\u5BFC\u5165\u5907\u4EFD</h2><p>\u5148\u9884\u68C0\u683C\u5F0F\u3001\u6570\u91CF\u3001\u7F3A\u5931\u97F3\u9891\u53CA\u91CD\u590D\u8BB0\u5F55\uFF0C\u518D\u9009\u62E9\u5408\u5E76\u3002\u4E0D\u4F1A\u76F4\u63A5\u8986\u76D6\u73B0\u6709\u66F2\u76EE\u3002</p>${b("\u9009\u62E9\u5907\u4EFD\u6587\u4EF6", "pickBackup", "", "outline")}</div><div class="page-card"><h2>\u53EF\u6062\u590D\u7684\u66F2\u5E93\u64CD\u4F5C</h2><p>\u6279\u91CF\u4FEE\u6539\u3001\u5907\u4EFD\u5BFC\u5165\u3001\u573A\u666F\u5408\u5E76\u4E0E\u505C\u7528\u4FDD\u7559\u6062\u590D\u8BB0\u5F55\u3002\u6062\u590D\u524D\u8BF7\u4FDD\u5B58\u5F53\u524D\u8349\u7A3F\u3002</p>${b("\u67E5\u770B\u6062\u590D\u8BB0\u5F55", "libraryHistory", "", "outline")}</div></section>`;
+    return `<section><div class="main-head"><div><h1>\u504F\u597D\u4E0E\u6570\u636E</h1><p>\u8C03\u6574\u64AD\u653E\u4F53\u9A8C\uFF0C\u7BA1\u7406\u672C\u673A\u6570\u636E\u3002</p></div>${b("\u56DE\u6536\u4E0E\u6062\u590D", "page", 'data-id="trash"', "outline")}</div><div class="preferences-grid"><section class="surface preferences-panel"><h2>\u64AD\u653E\u504F\u597D</h2><div class="preference-row"><div><h3>\u603B\u97F3\u91CF</h3><p>\u63A7\u5236\u80CC\u666F\u97F3\u4E50\u7684\u6574\u4F53\u97F3\u91CF\u3002</p></div><div>${field("\u603B\u97F3\u91CF", "volume", prefs.volume, "range", 'min="0" max="1" step=".01" data-pref="volume"')}<output id="volumeValue">${Math.round(prefs.volume * 100)}%</output></div></div><div class="preference-row"><div><h3>\u66F2\u76EE\u5207\u6362\u6DE1\u5165\u6DE1\u51FA</h3><p>\u5728\u4E0D\u540C\u66F2\u76EE\u4E4B\u95F4\u5E73\u6ED1\u8FC7\u6E21\u3002</p></div><div class="unit-field">${field("\u8FC7\u6E21\u79D2\u6570", "fade", prefs.fade, "number", 'min="0" max="10" step=".5" data-pref="fade"')}<span aria-hidden="true">\u79D2</span></div></div><div class="preference-row"><div><h3>\u81EA\u52A8\u914D\u4E50</h3><p>\u5B8C\u6210\u65B0\u5267\u60C5\u540E\u5224\u65AD\u60C5\u7EEA\uFF0C\u672C\u5730\u9009\u66F2\u3002</p></div><label class="switch"><input id="enabled" type="checkbox" ${prefs.enabled ? "checked" : ""} data-pref="enabled" aria-label="\u81EA\u52A8\u914D\u4E50"><span></span></label></div><div class="preference-row"><div><h3>\u6E38\u620F\u5185\u60AC\u6D6E\u7A97</h3><p>\u5728\u6E38\u620F\u9875\u9762\u663E\u793A\u5C0F\u578B\u64AD\u653E\u63A7\u5236\u7A97\u3002</p></div><label class="switch"><input id="floating" type="checkbox" ${prefs.floating ? "checked" : ""} data-pref="floating" aria-label="\u663E\u793A\u60AC\u6D6E\u7A97"><span></span></label></div><div class="row preference-actions">${b("\u91CD\u7F6E\u60AC\u6D6E\u7A97\u4F4D\u7F6E", "resetPosition", "", "outline")}</div><details><summary>\u65E0\u5339\u914D\u97F3\u4E50\u65F6\u7684\u5904\u7406</summary>${select("\u65E0\u5339\u914D / \u9996\u6B21\u5224\u65AD\u5931\u8D25\u65F6", "defaultTrack", [["", "\u4FDD\u6301\u9759\u97F3"], ...live().map((t) => [t.id, t.name])], prefs.defaultTrack, 'data-pref="defaultTrack"')}</details><div class="row between rule"><p class="small">\u5224\u65AD\u671F\u95F4\u7EE7\u7EED\u64AD\u653E\uFF0C\u540C\u66F2\u4FDD\u6301\u8FDB\u5EA6\u3002</p>${b("\u4FDD\u5B58\u504F\u597D", "savePrefs", "", "primary")}</div></section><section class="surface data-panel"><h2>\u5907\u4EFD\u4E0E\u6062\u590D</h2><p>\u5907\u4EFD\u97F3\u4E50\u4E0E\u5206\u7C7B\uFF0C\u65B9\u4FBF\u8FC1\u79FB\u4E0E\u6062\u590D\u3002</p><label class="checkline"><input type="checkbox" id="includeAudio">\u5305\u542B\u97F3\u9891\u526F\u672C\uFF08\u6700\u591A 512 MB\uFF09</label><div class="row">${b("\u5BFC\u51FA\u5907\u4EFD", "exportLibrary", "", "outline")}${b("\u5BFC\u5165\u5907\u4EFD", "pickBackup", "", "outline")}</div><p class="small">\u5BC6\u94A5\u4E0E\u6A21\u578B\u8FDE\u63A5\u4E0D\u5305\u542B\u5728\u66F2\u5E93\u5907\u4EFD\u4E2D\u3002\u5BFC\u5165\u524D\u4F1A\u5148\u9884\u68C0\uFF0C\u4E0D\u76F4\u63A5\u8986\u76D6\u73B0\u6709\u97F3\u4E50\u3002</p>${cachePage()}</section></div><section class="surface data-readiness"><div class="section-heading"><h2 id="readinessSummary">\u8FD0\u884C\u68C0\u67E5</h2><div class="row">${b("\u5237\u65B0\u68C0\u67E5", "refreshReady", "", "quiet")}${b("\u590D\u5236\u8131\u654F\u8BCA\u65AD", "copyDiagnostics", "", "outline")}</div></div><div id="readyChecks"></div><p class="small">\u97F3\u9891\u3001\u5BC6\u94A5\u548C\u5267\u60C5\u7F13\u5B58\u4FDD\u5B58\u5728\u672C\u673A\u3002</p></section></section>`;
   }
   function ensureCleanTracks() {
     if (Object.values(drafts).some((t) => JSON.stringify(t) !== JSON.stringify(tracks.find((x) => x.id === t.id)))) throw Error("\u6709\u672A\u4FDD\u5B58\u7684\u66F2\u76EE\u8349\u7A3F\uFF0C\u8BF7\u5148\u4FDD\u5B58\u6216\u8FD8\u539F\u518D\u6267\u884C\u6279\u91CF\uFF0F\u6062\u590D\u64CD\u4F5C");
@@ -1327,6 +1412,40 @@
     if (action === "resetPosition") {
       runtime = await send("control", { command: "floatPosition", value: null });
       notice("\u60AC\u6D6E\u7A97\u4F4D\u7F6E\u5DF2\u91CD\u7F6E");
+      return true;
+    }
+    if (action === "deleteModel" || action === "confirmDeleteModel") {
+      const m = c.models.find((x) => x.id === id && !x.deleted);
+      if (!m) throw Error("\u6A21\u578B\u4E0D\u5B58\u5728\u6216\u5DF2\u5220\u9664");
+      if (c.tasks.scene === id) throw Error("\u8FD9\u662F\u5F53\u524D\u5224\u65AD\u6A21\u578B\uFF0C\u8BF7\u5148\u5728\u9875\u9762\u9876\u90E8\u9009\u62E9\u5E76\u4FDD\u5B58\u5176\u4ED6\u6A21\u578B\uFF0C\u518D\u5220\u9664\u3002");
+      if (action === "deleteModel") {
+        modal("\u5220\u9664\u5DF2\u914D\u7F6E\u6A21\u578B", `<p>\u5C06\u300C${esc(m.name || m.model)}\u300D\u79FB\u5165\u5DF2\u5220\u9664\u6A21\u578B\u5217\u8868\uFF0C\u53EF\u4EE5\u6062\u590D\u3002\u6B64\u670D\u52A1\u7684\u5730\u5740\u3001\u5BC6\u94A5\u4E0E\u5176\u4ED6\u6A21\u578B\u4FDD\u6301\u4E0D\u53D8\u3002</p><p class="small">\u6B64\u6A21\u578B\u672A\u4FDD\u5B58\u7684\u4FEE\u6539\u5C06\u88AB\u4E22\u5F03\uFF0C\u4E0D\u4F1A\u8C03\u7528 AI\u3002</p><div class="row">${b("\u786E\u8BA4\u5220\u9664", "confirmDeleteModel", `data-id="${id}"`, "outline danger")}${b("\u53D6\u6D88", "close", "", "outline")}</div>`);
+        return true;
+      }
+      await persist({ models: c.models.map((x) => x.id === id ? { ...x, deleted: true, disabled: true } : x) });
+      delete modelDrafts[id];
+      delete rawExtra[id];
+      delete testResults[id];
+      if (taskDraft.scene === id) taskDraft.scene = c.tasks.scene;
+      modelId = c.models.find((x) => !x.deleted)?.id || "";
+      close();
+      render();
+      notice("\u6A21\u578B\u5DF2\u5220\u9664\uFF0C\u53EF\u4ECE\u201C\u5DF2\u5220\u9664\u6A21\u578B\u201D\u6062\u590D\uFF1B\u670D\u52A1\u8FDE\u63A5\u4FDD\u7559\u3002");
+      return true;
+    }
+    if (action === "deletedModels") {
+      const deleted = c.models.filter((m) => m.deleted);
+      modal("\u5DF2\u5220\u9664\u6A21\u578B", deleted.length ? `<p>\u6062\u590D\u540E\u6A21\u578B\u4FDD\u6301\u505C\u7528\uFF0C\u53EF\u7F16\u8F91\u5E76\u542F\u7528\uFF1B\u4E0D\u4F1A\u81EA\u52A8\u5207\u6362\u5F53\u524D\u6A21\u578B\u3002</p><div class="stack">${deleted.map((m) => `<div class="row between"><span>${esc(m.name || m.model)}</span>${b("\u6062\u590D\u6A21\u578B", "restoreModel", `data-id="${m.id}"`, "outline")}</div>`).join("")}</div>` : "<p>\u6CA1\u6709\u5DF2\u5220\u9664\u7684\u6A21\u578B\u3002</p>");
+      return true;
+    }
+    if (action === "restoreModel") {
+      const m = c.models.find((x) => x.id === id && x.deleted);
+      if (!m) throw Error("\u6CA1\u6709\u627E\u5230\u53EF\u6062\u590D\u7684\u6A21\u578B");
+      await persist({ models: c.models.map((x) => x.id === id ? { ...x, deleted: false, disabled: true } : x) });
+      modelId = id;
+      close();
+      render();
+      notice("\u6A21\u578B\u5DF2\u6062\u590D\u4E3A\u505C\u7528\u72B6\u6001\uFF1B\u542F\u7528\u540E\u53EF\u9009\u62E9\u4E3A\u5224\u65AD\u6A21\u578B\u3002");
       return true;
     }
     if (action === "toggleConnection" || action === "toggleModel") {
@@ -1474,6 +1593,12 @@
     newEntity = false;
   }
   function refreshAI() {
+    if (aiEditor !== "connection" && !newEntity) {
+      render();
+      return;
+    }
+    const inline = document.querySelector(".model-editor");
+    if (inline) inline.innerHTML = "<p>\u6B63\u5728\u7F16\u8F91\uFF0C\u8BF7\u5B8C\u6210\u6216\u5173\u95ED\u5BF9\u8BDD\u6846\u3002</p>";
     const priorFocus = document.activeElement;
     drawer = true;
     modal(aiEditor === "connection" ? newEntity ? "\u6DFB\u52A0\u670D\u52A1" : "\u7F16\u8F91\u670D\u52A1" : newEntity ? "\u6DFB\u52A0\u6A21\u578B" : "\u7F16\u8F91\u6A21\u578B", aiEditor === "connection" ? connectionForm() : modelForm());
